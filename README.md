@@ -24,7 +24,7 @@ Completed:
 Not implemented yet:
 
 - FMI weather data and weather forecasts.
-- Comparison with additional years such as 2024.
+- Comparison with 2024 or earlier data. **This is an option for discussion, not a current project requirement.**
 - Machine-learning or next-month demand forecasting.
 - Interactive planning dashboard.
 
@@ -136,127 +136,50 @@ The raw trip records are filtered using industry-standard HSL mobility data crit
 
 ## 5. Reproduce the Current Results
 
-### Prerequisites
-Install Python 3.9+ and required packages:
-The commands below reproduce the current 2025 station-month result from a fresh clone.
-
-### Prerequisites
-
-Use Python 3.9 or newer. From the project root, create and activate a virtual environment:
-
-```
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-
-### Option A: One-Click End-to-End Execution (Recommended)
-Downloads the latest **2025 season (April–October)**, cleans trips, merges station coordinates, and writes `data/processed/station_month.csv`:
-If PowerShell blocks script activation, run the pipeline with the virtual environment's
-Python directly instead:
+The current result uses the 2025 season. If Python and the required packages are
+already available, collaborators only need to run these commands from the project
+root:
 
 ```powershell
-.venv\Scripts\python.exe run_pipeline.py
-```
-
-### Run the 2025 pipeline
-
-This downloads April-October 2025, cleans the trips, merges station coordinates, and
-writes `data/processed/station_month.csv`:
-
-```
-
-### Option B: Download Other Years or Full History
-To download a specific year (e.g. 2024):
-Generate the console summary and chart:
-
-```powershell
+python run_pipeline.py
 python show_results.py
 ```
 
-The main outputs are:
+`run_pipeline.py` downloads the 2025 data, cleans it, and creates:
 
 ```text
 data/processed/station_month.csv
+```
+
+`show_results.py` prints the summary and creates:
+
+```text
 data/processed/season_summary.png
 ```
 
-### Process another year
+If the required packages are not installed, run this once first:
 
-To download and process a specific year, for example 2024:
-
+```powershell
+pip install -r requirements.txt
 ```
 
-To download and process all 8 historical cycling seasons (2016–2025, ~1.84 GB):
-```powershell
-To process already downloaded raw files without downloading again:
+If the raw data has already been downloaded, use:
 
 ```powershell
 python run_pipeline.py --skip-download
+python show_results.py
 ```
 
-To download and process all available seasons from 2016 to 2025:
+The raw CSV files are large and are not uploaded to GitHub. Running the pipeline
+downloads them from the official HSL source.
 
-```
+## Next Steps
 
-### Option C: Re-run Processing Without Re-downloading
-If raw data is already downloaded in `data/raw/`:
-The `--all` option downloads a large amount of data. It is not necessary for the
-current student-project result.
+- Discuss whether to add 2024 or earlier data.
+- Consider adding FMI weather data.
+- Consider a simple demand prediction model and an interactive dashboard.
 
-### Open the notebook
-
-```powershell
-jupyter notebook notebooks/station_month_demo.ipynb
-```
-
-## Data Policy and GitHub Repository
-
-Raw HSL CSV files are not included in this repository because they are large. The
-pipeline downloads them from the official HSL source when it is run. The `data/raw/`
-and `data/processed/` directories are ignored by Git by default.
-
-This means that a new user should run `python run_pipeline.py` before opening the
-notebook or running `show_results.py`. If a small processed result is intentionally
-shared as a reference output, it can be added explicitly with:
-```
-
-git add -f data/processed/station_month.csv data/processed/season_summary.png
-Run the reporting script to view console analytics and generate summary graphs:
-```powershell
-Do not commit raw CSV files, virtual environments, API keys, passwords, or local
-absolute paths.
-
-### 6.1 Core Assumptions
-1. **Operating Season**: The current dataset covers the months available in the 2025 files (April-October). Months without an operating file must not be interpreted as zero demand.
-2. **Rebalancing Flow Interpretation**: `net_flow = returns - departures`. A station with a strongly negative net flow consistently runs out of bikes (commuter origins), while a station with strongly positive net flow runs out of empty docks (commuter destinations).
-3. **Spatial Homogeneity**: Stations without GPS coordinates in historical years will be retained with null coordinates rather than dropped, preserving aggregate trip counts.
-
-### 6.2 Data Licenses & Privacy
-* **License**: Data is provided by **City Bike Finland** and **HSL** under the [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/) license.
-* **Attribution**: "Source: HSL, City Bike Finland, Helsinki Region Infoshare".
-* **Data Privacy**: Only station-level and monthly aggregated statistics are stored in processed datasets. Individual rider trajectories or personal identifiable information (PII) are never stored or exposed.
-
-### 6.3 Open Questions & Future Roadmap (Per Canvas)
-* **Weather Data Integration**: Next step is to fetch FMI (Finnish Meteorological Institute) weather observation parameters (`t2m` air temperature, `r_1h` precipitation, `ws_10min` wind speed) and join them to `station_month.csv`.
-* **Predictive Modeling**: Implement baseline models (previous year same-month) and tree-based regression (e.g. Random Forest / LightGBM) to forecast next-month departures and returns.
-* **Allocation Dashboard**: Build a Streamlit / Dash web interface allowing planners to inspect priority lists for truck redistribution.
-
-## Limitations
-
-- The current analysis uses one complete season, 2025.
-- `net_flow` describes the difference between recorded returns and departures; it is
-   not a direct measurement of the number of bikes physically available at a station.
-- The current station metadata represents the latest downloaded station information,
-   so historical station changes are not yet versioned.
-- Weather effects and future demand are not included in the current output.
-
-## Suggested Team Workflow
-
-1. Start with the 2025 pipeline and verify the generated station-month table.
-2. Add 2024 data for a year-over-year comparison.
-3. Add FMI weather observations and document the date/time matching method.
-4. Compare a simple previous-year baseline with a regression model.
-5. Build the dashboard and allocation-priority explanation after the data pipeline is stable.
-
-When adding a new analysis, please document the data source, assumptions, and command
-needed to reproduce it in this README or in the `notebooks/` folder.
+Data source: HSL, City Bike Finland, and Helsinki Region Infoshare. The project uses
+station-level and monthly aggregated data and does not publish individual rider
+identities.
 
