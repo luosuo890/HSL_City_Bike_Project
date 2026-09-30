@@ -162,10 +162,94 @@ def aggregate_monthly_trips(
     return merged.sort_values(["year_month", "station_id"]).reset_index(drop=True)
 
 
+def load_and_aggregate_weather(raw_dir: str, year: int = None) -> pd.DataFrame:
+    """
+    Load raw FMI daily weather observations from data/raw/weather_daily_*.csv,
+    validate field-by-field completeness, process precipitation and temperatures,
+    and aggregate into a monthly weather table.
+
+    FMI Data Handling Specifications:
+    - Timezone: Raw timestamps in UTC are converted to local Finnish time ('Europe/Helsinki', EEST/EET).
+    - Precipitation (-1.0): Official FMI standard defines -1.0 as 'ei ole satanut' (no precipitation / dry).
+      Trace precipitation (<0.1 mm) is represented by 0.0. Values of -1.0 are converted to 0.0 mm.
+      True missing values are represented as NaN and preserved.
+    - Rainy Days: Count of days with daily precipitation >= 1.0 mm (standard meteorological rain day).
+    - Field-by-field Coverage: Independently checks completeness of tday, tmin, tmax, rrday, and snow.
+    """
+    pattern = os.path.join(raw_dir, "weather_daily_*.csv")
+    weather_files = glob.glob(pattern)
+    if year is not None:
+        weather_files = [f for f in weather_files if f"weather_daily_{year}.csv" in f]
+
+    if not weather_files:
+        print("  [Warning] No raw weather files (weather_daily_*.csv) found. Skipping weather aggregation.")
+        return None
+
+    dfs = [pd.read_csv(f, encoding="utf-8") for f in weather_files]
+    df_raw = pd.concat(dfs, ignore_index=True)
+
+    # Convert timestamps to local Finnish time
+    df_raw["dt_utc"] = pd.to_datetime(df_raw["time_utc"], utc=True)
+    df_raw["dt_local"] = df_raw["dt_utc"].dt.tz_convert("Europe/Helsinki")
+    df_raw["year_month"] = df_raw["dt_local"].dt.strftime("%Y-%m")
+
+    # Pivot parameters
+    pivoted = df_raw.pivot_table(
+        index=["year_month", "city", "fmisid", "station_name", "dt_local"],
+        columns="parameter",
+        values="value",
+        aggfunc="first",
+    ).reset_index()
+
+    # Convert parameter columns to numeric
+    for col in ["tday", "tmin", "tmax", "rrday", "snow"]:
+        if col in pivoted.columns:
+            pivoted[col] = pd.to_numeric(pivoted[col], errors="coerce")
+
+    # Field-by-field completeness validation
+    print("\nValidating FMI daily observation coverage by field:")
+    for param in ["tday", "tmin", "tmax", "rrday", "snow"]:
+        if param in pivoted.columns:
+            for city in sorted(pivoted["city"].unique()):
+                city_subset = pivoted[pivoted["city"] == city]
+                non_null = city_subset[param].notna().sum()
+                total = len(city_subset)
+                pct = (non_null / total * 100) if total > 0 else 0
+                print(f"  - [{city}] Field '{param}': {non_null}/{total} observations ({pct:.1f}%)")
+        else:
+            print(f"  [Warning] Expected field '{param}' not found in weather observations.")
+
+    # Official FMI precipitation handling:
+    # -1.0 = no rain (0.0 mm), 0.0 = trace (<0.1 mm), >0 = measured mm, NaN = missing
+    if "rrday" in pivoted.columns:
+        pivoted["precip_mm"] = np.where(pivoted["rrday"] < 0, 0.0, pivoted["rrday"])
+        pivoted["is_rainy_day"] = pivoted["precip_mm"] >= 1.0
+    else:
+        pivoted["precip_mm"] = np.nan
+        pivoted["is_rainy_day"] = False
+
+    # Monthly aggregation
+    monthly = (
+        pivoted.groupby(["year_month", "city", "fmisid"])
+        .agg(
+            avg_temperature_c=("tday", lambda x: round(x.mean(), 1) if x.notna().any() else np.nan),
+            min_temperature_c=("tmin", lambda x: round(x.min(), 1) if x.notna().any() else np.nan),
+            max_temperature_c=("tmax", lambda x: round(x.max(), 1) if x.notna().any() else np.nan),
+            total_precipitation_mm=("precip_mm", lambda x: round(x.sum(), 1) if x.notna().any() else np.nan),
+            rainy_days_count=("is_rainy_day", lambda x: int(x.sum()) if x.notna().any() else 0),
+        )
+        .reset_index()
+        .rename(columns={"fmisid": "weather_station_id"})
+    )
+
+    print(f"  Aggregated {len(monthly)} monthly weather records across {monthly['year_month'].nunique()} months.")
+    return monthly
+
+
 def process_all_data(raw_dir: str, processed_dir: str, year: int = None) -> pd.DataFrame:
     """
     Find all monthly CSVs in raw_dir, clean trips, aggregate by station-month,
-    and save result to processed_dir/station_month.csv.
+    merge weather data and station coordinates, and save result to processed_dir/station_month.csv.
     """
     os.makedirs(processed_dir, exist_ok=True)
 
@@ -195,7 +279,11 @@ def process_all_data(raw_dir: str, processed_dir: str, year: int = None) -> pd.D
 
     # 2. Find all monthly trip CSVs
     pattern = os.path.join(raw_dir, "*.csv")
-    csv_files = [f for f in glob.glob(pattern) if os.path.basename(f) != "stations.csv"]
+    csv_files = [
+        f
+        for f in glob.glob(pattern)
+        if os.path.basename(f) != "stations.csv" and not os.path.basename(f).startswith("weather_")
+    ]
     csv_files = [f for f in csv_files if re.match(r"^\d{4}-\d{2}\.csv$", os.path.basename(f))]
 
     if year is not None:
@@ -228,6 +316,52 @@ def process_all_data(raw_dir: str, processed_dir: str, year: int = None) -> pd.D
         monthly_aggregates.append(monthly_agg)
 
     final_df = pd.concat(monthly_aggregates, ignore_index=True)
+
+    # 3. Load and integrate FMI weather data
+    print("\nIntegrating FMI weather observations...")
+    weather_df = load_and_aggregate_weather(raw_dir, year)
+    if weather_df is not None and not weather_df.empty:
+        orig_len = len(final_df)
+        # Left join on year_month and city.
+        # Stations with unmapped city (NaN) naturally retain NaN for weather metrics
+        # to avoid false precision and unwarranted assumptions.
+        final_df = pd.merge(
+            final_df,
+            weather_df,
+            on=["year_month", "city"],
+            how="left",
+        )
+
+        # Verify integrity
+        assert len(final_df) == orig_len, f"Row count changed after weather join: {len(final_df)} vs {orig_len}"
+        assert final_df.duplicated(subset=["year_month", "station_id"]).sum() == 0, "Duplicate station-month keys found"
+        print(f"  [Success] Weather observations successfully merged. Row count preserved: {len(final_df):,}")
+
+    # Reorder columns
+    ordered_cols = [
+        "year_month",
+        "station_id",
+        "station_name",
+        "city",
+        "capacity",
+        "latitude",
+        "longitude",
+        "departures",
+        "returns",
+        "net_flow",
+        "total_trips",
+        "avg_distance_m",
+        "avg_duration_sec",
+        "weather_station_id",
+        "avg_temperature_c",
+        "min_temperature_c",
+        "max_temperature_c",
+        "total_precipitation_mm",
+        "rainy_days_count",
+    ]
+    existing_cols = [c for c in ordered_cols if c in final_df.columns]
+    extra_cols = [c for c in final_df.columns if c not in existing_cols]
+    final_df = final_df[existing_cols + extra_cols]
 
     output_file = os.path.join(processed_dir, "station_month.csv")
     final_df.to_csv(output_file, index=False, encoding="utf-8")

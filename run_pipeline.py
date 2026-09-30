@@ -8,7 +8,7 @@ import sys
 import argparse
 import time
 
-from src.download_data import download_season, fetch_station_metadata, DEFAULT_RAW_DIR
+from src.download_data import download_season, fetch_station_metadata, fetch_fmi_weather, DEFAULT_RAW_DIR
 from src.clean_and_aggregate import process_all_data
 
 
@@ -51,6 +51,14 @@ def main():
         stations_csv = os.path.join(raw_dir, "stations.csv")
         fetch_station_metadata(stations_csv)
 
+        # Download FMI weather observations
+        if args.all:
+            for y in range(2016, 2026):
+                fetch_fmi_weather(y, raw_dir)
+        else:
+            fetch_fmi_weather(args.year, raw_dir)
+
+        # Download trips
         if args.all:
             for y in range(2016, 2026):
                 months = range(5, 11) if y in [2016, 2017] else range(4, 11)

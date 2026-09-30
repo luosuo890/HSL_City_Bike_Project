@@ -89,6 +89,24 @@ def main():
     for _, row in deficit.iterrows():
         print(f"     * Station {row['station_id']:3d} ({row['station_name']}, {row['city']}): {row['net_flow']:,} bikes")
 
+    # 4. Weather Observations Summary
+    if "avg_temperature_c" in df.columns:
+        print("\n[4] OBSERVED WEATHER SUMMARY (FMI ACTUAL OBSERVATIONS):")
+        weather_summary = (
+            df.groupby(["year_month", "city"])
+            .agg(
+                station_count=("station_id", "nunique"),
+                avg_temp=("avg_temperature_c", "first"),
+                min_temp=("min_temperature_c", "first"),
+                max_temp=("max_temperature_c", "first"),
+                precip_mm=("total_precipitation_mm", "first"),
+                rainy_days=("rainy_days_count", "first"),
+            )
+            .reset_index()
+        )
+        print(weather_summary.to_string(index=False))
+
+
     # 4. Export visualization chart
     try:
         import matplotlib
