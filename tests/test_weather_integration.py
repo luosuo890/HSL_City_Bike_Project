@@ -55,46 +55,59 @@ def test_raw_daily_weather_field_coverage(project_dirs):
     """
     Verify field-by-field completeness of raw FMI daily weather observations:
     Every field (tday, tmin, tmax, rrday, snow) must be checked independently
-    and have 100% coverage (214/214 days in April-October 2025) for each station.
+    and have 100% coverage (214/214 days in April-October) for each station in both 2024 and 2025.
     """
-    raw_csv = os.path.join(project_dirs["raw"], "weather_daily_2025.csv")
-    assert os.path.exists(raw_csv), "weather_daily_2025.csv does not exist"
-
-    df_raw = pd.read_csv(raw_csv)
-    pivoted = df_raw.pivot_table(
-        index=["time_utc", "city", "station_name"],
-        columns="parameter",
-        values="value",
-        aggfunc="first",
-    ).reset_index()
-
     expected_days = 214  # April 1 to October 31: 30+31+30+31+31+30+31
     expected_fields = ["tday", "tmin", "tmax", "rrday", "snow"]
 
-    for city in ["Helsinki", "Espoo"]:
-        city_df = pivoted[pivoted["city"] == city]
-        assert len(city_df) == expected_days, f"Expected {expected_days} days for {city}, got {len(city_df)}"
+    for year in [2024, 2025]:
+        raw_csv = os.path.join(project_dirs["raw"], f"weather_daily_{year}.csv")
+        assert os.path.exists(raw_csv), f"weather_daily_{year}.csv does not exist"
 
-        for field in expected_fields:
-            assert field in city_df.columns, f"Field '{field}' missing from {city} observations"
-            non_null_count = city_df[field].notna().sum()
-            assert non_null_count == expected_days, (
-                f"{city} field '{field}' has missing observations: {non_null_count}/{expected_days}"
-            )
+        df_raw = pd.read_csv(raw_csv)
+        pivoted = df_raw.pivot_table(
+            index=["time_utc", "city", "station_name"],
+            columns="parameter",
+            values="value",
+            aggfunc="first",
+        ).reset_index()
+
+        for city in ["Helsinki", "Espoo"]:
+            city_df = pivoted[pivoted["city"] == city]
+            assert len(city_df) == expected_days, f"Expected {expected_days} days for {city} in {year}, got {len(city_df)}"
+
+            for field in expected_fields:
+                assert field in city_df.columns, f"Field '{field}' missing from {city} {year} observations"
+                non_null_count = city_df[field].notna().sum()
+                assert non_null_count == expected_days, (
+                    f"{city} {year} field '{field}' has missing observations: {non_null_count}/{expected_days}"
+                )
 
 
 def test_weather_aggregation_completeness(project_dirs):
     """
-    Verify that raw daily weather observations aggregate to exactly 14 records
-    (7 months x 2 cities) with no missing values.
+    Verify that raw daily weather observations aggregate correctly:
+    - Single year (2024 or 2025): exactly 14 records (7 months x 2 cities).
+    - Multi-year (both years): exactly 28 records (14 months x 2 cities) with no missing values.
     """
     raw_dir = project_dirs["raw"]
-    weather_df = load_and_aggregate_weather(raw_dir, year=2025)
 
+    # Test single-year 2024
+    w24 = load_and_aggregate_weather(raw_dir, year=2024)
+    assert w24 is not None and len(w24) == 14
+    assert sorted(w24["year_month"].unique()) == [f"2024-{m:02d}" for m in range(4, 11)]
+
+    # Test single-year 2025
+    w25 = load_and_aggregate_weather(raw_dir, year=2025)
+    assert w25 is not None and len(w25) == 14
+    assert sorted(w25["year_month"].unique()) == [f"2025-{m:02d}" for m in range(4, 11)]
+
+    # Test complete multi-year aggregation
+    weather_df = load_and_aggregate_weather(raw_dir, year=None)
     assert weather_df is not None, "Weather aggregation returned None"
-    assert len(weather_df) == 14, f"Expected 14 monthly weather rows, got {len(weather_df)}"
+    assert len(weather_df) == 28, f"Expected 28 monthly weather rows, got {len(weather_df)}"
 
-    expected_months = [f"2025-{m:02d}" for m in range(4, 11)]
+    expected_months = [f"2024-{m:02d}" for m in range(4, 11)] + [f"2025-{m:02d}" for m in range(4, 11)]
     assert sorted(weather_df["year_month"].unique()) == expected_months
 
     expected_cities = {"Helsinki", "Espoo"}
@@ -108,19 +121,24 @@ def test_weather_aggregation_completeness(project_dirs):
 
 def test_station_month_merge_integrity(project_dirs):
     """
-    Verify the merged station_month.csv:
-    1. Row count is strictly preserved (3,197 rows).
+    Verify the merged station_month.csv across 2024 and 2025:
+    1. Row count is strictly preserved (6,395 rows = 3,198 in 2024 + 3,197 in 2025).
     2. Primary key (year_month, station_id) remains strictly unique.
-    3. Weather columns exist.
-    4. Mapped stations (Helsinki, Espoo) have 100% complete weather metrics.
-    5. Stations with unmapped city (45 rows) retain NaN for weather (no false assumptions).
-    6. Weather values satisfy physical sanity bounds.
+    3. Exactly 14 unique months covered.
+    4. Weather columns exist.
+    5. Mapped stations (6,324 rows) have 100% complete weather metrics.
+    6. Stations with unmapped city (71 rows: 26 in 2024, 45 in 2025) retain NaN for weather (no false assumptions).
+    7. Weather values satisfy physical sanity bounds.
     """
     processed_path = os.path.join(project_dirs["processed"], "station_month.csv")
     assert os.path.exists(processed_path), "station_month.csv does not exist"
 
     df = pd.read_csv(processed_path)
-    assert len(df) == 3197, f"Expected 3,197 rows, got {len(df)}"
+    assert len(df) == 6395, f"Expected 6,395 rows, got {len(df)}"
+
+    # 14 unique months
+    expected_months = [f"2024-{m:02d}" for m in range(4, 11)] + [f"2025-{m:02d}" for m in range(4, 11)]
+    assert sorted(df["year_month"].unique()) == expected_months
 
     # Key uniqueness
     duplicates = df.duplicated(subset=["year_month", "station_id"]).sum()
@@ -138,17 +156,17 @@ def test_station_month_merge_integrity(project_dirs):
     for col in weather_cols:
         assert col in df.columns, f"Missing weather column {col}"
 
-    # Mapped stations must have complete weather data
+    # Mapped stations must have complete weather data (6,324 rows)
     mapped_mask = df["city"].isin(["Helsinki", "Espoo"])
-    assert mapped_mask.sum() == 3152, f"Expected 3,152 mapped station-month rows, got {mapped_mask.sum()}"
+    assert mapped_mask.sum() == 6324, f"Expected 6,324 mapped station-month rows, got {mapped_mask.sum()}"
     for col in weather_cols:
         assert df.loc[mapped_mask, col].isna().sum() == 0, f"Column {col} has nulls for mapped stations"
 
-    # Unmapped stations (45 rows) must retain NaN for weather (avoiding false precision)
+    # Unmapped stations (71 rows total: 26 in 2024, 45 in 2025) must retain NaN for weather
     unmapped_mask = df["city"].isna()
-    assert unmapped_mask.sum() == 45, f"Expected 45 unmapped station-month rows, got {unmapped_mask.sum()}"
+    assert unmapped_mask.sum() == 71, f"Expected 71 unmapped station-month rows, got {unmapped_mask.sum()}"
     for col in weather_cols:
-        assert df.loc[unmapped_mask, col].isna().sum() == 45, (
+        assert df.loc[unmapped_mask, col].isna().sum() == 71, (
             f"Unmapped stations should have NaN weather for {col}, but found non-null values"
         )
 
@@ -166,3 +184,20 @@ def test_station_month_merge_integrity(project_dirs):
 
     espoo_fmisid = df[df["city"] == "Espoo"]["weather_station_id"].unique()
     assert list(espoo_fmisid) == [874863], "Espoo stations must map to Tapiola (874863)"
+
+
+def test_station_metadata_mapping_audit(project_dirs):
+    """
+    Audit unmapped stations across both seasons:
+    - 2024 season has exactly 4 unmapped stations (710, 768, 997, 999).
+    - 2025 season has exactly 7 unmapped stations (626, 710, 716, 754, 768, 997, 999).
+    - All other stations map cleanly to the official stations layer.
+    """
+    processed_path = os.path.join(project_dirs["processed"], "station_month.csv")
+    df = pd.read_csv(processed_path)
+
+    unmapped_2024 = set(df[df["year_month"].str.startswith("2024-") & df["city"].isna()]["station_id"].unique())
+    assert unmapped_2024 == {710, 768, 997, 999}, f"Unexpected 2024 unmapped stations: {unmapped_2024}"
+
+    unmapped_2025 = set(df[df["year_month"].str.startswith("2025-") & df["city"].isna()]["station_id"].unique())
+    assert unmapped_2025 == {626, 710, 716, 754, 768, 997, 999}, f"Unexpected 2025 unmapped stations: {unmapped_2025}"

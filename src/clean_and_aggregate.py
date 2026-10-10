@@ -162,7 +162,7 @@ def aggregate_monthly_trips(
     return merged.sort_values(["year_month", "station_id"]).reset_index(drop=True)
 
 
-def load_and_aggregate_weather(raw_dir: str, year: int = None) -> pd.DataFrame:
+def load_and_aggregate_weather(raw_dir: str, year: int | list[int] = None) -> pd.DataFrame:
     """
     Load raw FMI daily weather observations from data/raw/weather_daily_*.csv,
     validate field-by-field completeness, process precipitation and temperatures,
@@ -179,7 +179,14 @@ def load_and_aggregate_weather(raw_dir: str, year: int = None) -> pd.DataFrame:
     pattern = os.path.join(raw_dir, "weather_daily_*.csv")
     weather_files = glob.glob(pattern)
     if year is not None:
-        weather_files = [f for f in weather_files if f"weather_daily_{year}.csv" in f]
+        if isinstance(year, (int, str)):
+            year_list = [int(year)]
+        else:
+            year_list = [int(y) for y in year]
+        weather_files = [
+            f for f in weather_files
+            if any(f"weather_daily_{y}.csv" in f for y in year_list)
+        ]
 
     if not weather_files:
         print("  [Warning] No raw weather files (weather_daily_*.csv) found. Skipping weather aggregation.")
@@ -246,10 +253,11 @@ def load_and_aggregate_weather(raw_dir: str, year: int = None) -> pd.DataFrame:
     return monthly
 
 
-def process_all_data(raw_dir: str, processed_dir: str, year: int = None) -> pd.DataFrame:
+def process_all_data(raw_dir: str, processed_dir: str, year: int | list[int] = None) -> pd.DataFrame:
     """
-    Find all monthly CSVs in raw_dir, clean trips, aggregate by station-month,
+    Find monthly CSVs in raw_dir, clean trips, aggregate by station-month,
     merge weather data and station coordinates, and save result to processed_dir/station_month.csv.
+    If specific years are processed, existing data for other years in station_month.csv is safely preserved.
     """
     os.makedirs(processed_dir, exist_ok=True)
 
@@ -287,7 +295,14 @@ def process_all_data(raw_dir: str, processed_dir: str, year: int = None) -> pd.D
     csv_files = [f for f in csv_files if re.match(r"^\d{4}-\d{2}\.csv$", os.path.basename(f))]
 
     if year is not None:
-        csv_files = [f for f in csv_files if os.path.basename(f).startswith(f"{year}-")]
+        if isinstance(year, (int, str)):
+            year_list = [int(year)]
+        else:
+            year_list = [int(y) for y in year]
+        csv_files = [
+            f for f in csv_files
+            if any(os.path.basename(f).startswith(f"{y}-") for y in year_list)
+        ]
 
     csv_files = sorted(csv_files)
     if not csv_files:
@@ -364,6 +379,24 @@ def process_all_data(raw_dir: str, processed_dir: str, year: int = None) -> pd.D
     final_df = final_df[existing_cols + extra_cols]
 
     output_file = os.path.join(processed_dir, "station_month.csv")
+
+    # If processing a subset of years and output_file already exists, preserve records from other years
+    if os.path.exists(output_file) and year is not None:
+        try:
+            existing_df = pd.read_csv(output_file)
+            new_months = set(final_df["year_month"].unique())
+            other_existing = existing_df[~existing_df["year_month"].isin(new_months)]
+            if not other_existing.empty:
+                print(
+                    f"  Preserving {len(other_existing):,} existing records for months "
+                    f"{sorted(other_existing['year_month'].unique())} from {os.path.basename(output_file)}"
+                )
+                final_df = pd.concat([other_existing, final_df], ignore_index=True)
+                final_df = final_df.sort_values(["year_month", "station_id"]).reset_index(drop=True)
+        except Exception as e:
+            print(f"  [Warning] Could not merge with existing {output_file}: {e}")
+
+    assert final_df.duplicated(subset=["year_month", "station_id"]).sum() == 0, "Duplicate station-month keys found in final table"
     final_df.to_csv(output_file, index=False, encoding="utf-8")
     print(f"\n[Success] Final station-month table saved to {output_file}")
     print(f"Total station-month rows: {len(final_df):,} across {final_df['year_month'].nunique()} months.")

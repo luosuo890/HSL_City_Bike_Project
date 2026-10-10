@@ -196,9 +196,11 @@ def main():
     parser = argparse.ArgumentParser(description="Download HSL City Bike raw data.")
     parser.add_argument(
         "--year",
-        type=int,
-        default=2025,
-        help="Season year to download (default: 2025)",
+        "--years",
+        dest="years",
+        nargs="+",
+        default=None,
+        help="Season year(s) to download (e.g. --year 2024, --year 2024 2025; default: 2024 and 2025)",
     )
     parser.add_argument(
         "--all",
@@ -219,23 +221,28 @@ def main():
     stations_csv = os.path.join(args.output_dir, "stations.csv")
     fetch_station_metadata(stations_csv)
 
-    # 2. Download FMI weather observations
+    # Determine years to download
     if args.all:
-        for y in range(2016, 2026):
-            fetch_fmi_weather(y, args.output_dir)
+        target_years = list(range(2016, 2026))
+    elif args.years:
+        target_years = []
+        for y_str in args.years:
+            for part in str(y_str).split(","):
+                part = part.strip()
+                if part.isdigit():
+                    target_years.append(int(part))
     else:
-        fetch_fmi_weather(args.year, args.output_dir)
+        target_years = [2024, 2025]
+
+    # 2. Download FMI weather observations
+    print(f"\nProcessing weather and trips for target seasons: {target_years}")
+    for y in target_years:
+        fetch_fmi_weather(y, args.output_dir)
 
     # 3. Download trips
-    if args.all:
-        years = range(2016, 2026)
-        print(f"\nInitiating download for all years: {list(years)}")
-        for y in years:
-            # 2016-2017 started in May (month 5), others in April (month 4)
-            months = range(5, 11) if y in [2016, 2017] else range(4, 11)
-            download_season(y, args.output_dir, months)
-    else:
-        download_season(args.year, args.output_dir)
+    for y in target_years:
+        months = range(5, 11) if y in [2016, 2017] else range(4, 11)
+        download_season(y, args.output_dir, months)
 
     print("\nDownload complete. All files saved to:", args.output_dir)
 

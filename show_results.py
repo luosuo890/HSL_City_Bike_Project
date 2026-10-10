@@ -115,12 +115,13 @@ def main():
         import matplotlib.pyplot as plt
 
         fig, axs = plt.subplots(2, 2, figsize=(16, 11))
-        fig.suptitle("HSL City Bike 2025: Season & Station Flow Analysis", fontsize=16, fontweight="bold")
+        fig.suptitle("HSL City Bike: 2024-2025 Multi-Season & Station Flow Analysis", fontsize=16, fontweight="bold")
 
         # Chart 1: Monthly Departures
         axs[0, 0].bar(monthly["year_month"], monthly["total_departures"] / 1000, color="#2b5c8f", edgecolor="black")
         axs[0, 0].set_title("Total Trips per Month (Thousands)", fontweight="bold")
         axs[0, 0].set_ylabel("Trips (in thousands)")
+        axs[0, 0].tick_params(axis="x", rotation=45)
         axs[0, 0].grid(axis="y", linestyle="--", alpha=0.6)
 
         # Chart 2: Top 10 Stations

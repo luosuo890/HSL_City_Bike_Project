@@ -17,4 +17,5 @@ data/processed/*
 # Logs and temp files
 *.log
 scratch/
+.vscode/
 
