@@ -4,7 +4,7 @@ Student project based on [HSL_City_Bike_Project_Canvas.md](HSL_City_Bike_Project
 
 The Technical Report: [HSL_City_Bike_Technical_Final_Report.pdf](reports/HSL_City_Bike_Technical_Final_Report.pdf)
 
-The Deliverable Product:[HSL Bike Insight Map](https://luosuo890.github.io/HSL_City_Bike_Project/)
+The Deliverable Product: [HSL Bike Insight Map](https://luosuo890.github.io/HSL_City_Bike_Project/)
 
 The project investigates how city-bike travel demand changes by station, month, day type, and time of day across the Helsinki Capital Region (Helsinki and Espoo). The current repository creates a unified station-month dataset covering two complete HSL cycling seasons (**2024 and 2025**, April 1 to October 31 each; 14 months total), integrates actual historical weather observations from the Finnish Meteorological Institute (FMI), and generates publication-quality static figures and reports for course presentation and GitHub documentation.
 
