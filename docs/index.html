@@ -49,6 +49,9 @@
       <button class="tab-btn" data-tab="tab-demand-forecasting">
         <span>📈 Demand Forecasting Benchmarks</span>
       </button>
+      <button class="tab-btn" data-tab="tab-weather-scenario">
+        <span>⚡ City-Day Weather Scenario Explorer</span>
+      </button>
     </div>
   </nav>
 
@@ -785,6 +788,214 @@
       </div>
 
       <!-- Methodological Guardrails & Operational Boundaries -->
+      <div class="footer-guardrails" style="margin-top: 1.5rem;">
+        <strong>Methodological Guidelines &amp; Operational Boundaries for Demand Forecasting:</strong><br>
+        • <strong>Single Out-of-Time Backtest:</strong> All metrics reflect a single evaluation cycling season (2025). The lower volume error of the Same-Month Baseline and higher ranking overlap of Ridge regression serve as empirical planning observations, not claims of permanent or statistically significant superiority.<br>
+        • <strong>Demand Forecast Errors:</strong> MAE measures trips, not bicycles. Error metrics (MAE and RMSE) are strictly denominated in completed passenger journeys (trips) per station-month, not physical bicycle inventory. Bicycles turn over multiple times per day across stations.<br>
+        • <strong>Flow Terminology &amp; Rebalancing Limits:</strong> Terms such as "Net Outflow" (returns less than departures) and "Net Inflow" (returns greater than departures) quantify directional journey imbalances over 30 days. They do not represent physical dock fullness or empty states, and must not be treated as automated rebalancing truck dispatch orders.<br>
+        • <strong>No Weather Feature Leakage:</strong> Predictive models were trained strictly using historical lag volumes, geospatial coordinates, dock capacities, and month indicators. Actual 2025 weather was completely omitted from model feature matrices.<br>
+        • <strong>Strict Cohort Differentiation:</strong> Full-Season Baseline (N = 3,170 station-months, April to October) includes April season opening data; Multi-Model Test (N = 2,718 station-months, May to October) omits April because 1-month lag models require previous-month operating history. These cohorts must never be merged.
+      </div>
+
+    </section>
+
+    <!-- TAB 5: City-Day Weather Scenario Explorer -->
+    <section id="tab-weather-scenario" class="tab-pane">
+
+      <!-- Informational Alert Banner -->
+      <div class="alert-banner">
+        <div>
+          <strong>City-Day Weather Scenario Simulation (What-If Demand Simulator):</strong> Evaluates city-wide daily departure sensitivity under hypothetical temperature and precipitation conditions using 2024-trained Ridge regression models evaluated out-of-time on the 2025 season (214 calendar dates / 428 city-days).
+        </div>
+      </div>
+
+      <!-- City-Day Weather Scenario Explorer Card -->
+      <div class="chart-card forecast-scenario-section" id="forecast-weather-scenario-card" style="margin-top: 1.5rem;">
+        <div class="chart-card-header">
+          <div>
+            <div class="chart-card-title">City-Day Weather Scenario Explorer (What-If Demand Simulator)</div>
+            <div class="chart-card-sub">
+              Independent city-level aggregate model: Estimates daily completed departures under hypothetical temperature and rainfall scenarios using 2024-trained Ridge models evaluated out-of-time on 2025.
+            </div>
+          </div>
+          <span class="badge-archetype badge-commute-surp">City-Day Aggregate</span>
+        </div>
+
+        <!-- Section Informational Alert -->
+        <div class="scenario-intro-alert">
+          <div>
+            <strong>Granularity &amp; Evaluation Scope:</strong> This module models <strong>city-wide daily departures</strong> (Helsinki and Espoo aggregated per calendar date), completely separate from the station-month rebalancing models in Tab 4.
+            Controls reflect a <strong>hypothetical what-if scenario, not a prospective weather forecast</strong>. Out-of-time model benchmarks (2025 season, 214 calendar days / 428 city-days) evaluate whether meteorological features add incremental predictive value over calendar cycles alone.
+          </div>
+        </div>
+
+        <!-- Scenario Interactive Controls -->
+        <div class="scenario-controls-grid">
+          <div class="scenario-control-group">
+            <label for="scenario-city" class="scenario-control-label">Municipality:</label>
+            <select id="scenario-city" class="select-input">
+              <option value="Helsinki" selected>Helsinki</option>
+              <option value="Espoo">Espoo</option>
+            </select>
+          </div>
+
+          <div class="scenario-control-group">
+            <label for="scenario-month" class="scenario-control-label">Season Month:</label>
+            <select id="scenario-month" class="select-input">
+              <option value="4">April (Season Opening)</option>
+              <option value="5">May (Spring Ramp-up)</option>
+              <option value="6" selected>June (Midsummer Demand Surge)</option>
+              <option value="7">July (Holiday Low Commute)</option>
+              <option value="8">August (Late Summer Return)</option>
+              <option value="9">September (Autumn Active)</option>
+              <option value="10">October (Season Wind-down)</option>
+            </select>
+          </div>
+
+          <div class="scenario-control-group">
+            <label for="scenario-daytype" class="scenario-control-label">Day Schedule:</label>
+            <select id="scenario-daytype" class="select-input">
+              <option value="weekday" selected>Weekday (Monday–Friday)</option>
+              <option value="weekend">Weekend (Saturday–Sunday)</option>
+            </select>
+          </div>
+
+          <div class="scenario-control-group slider-control-group">
+            <div class="slider-header">
+              <label for="scenario-tday" class="scenario-control-label">Hypothetical Mean Temp (tday):</label>
+              <span id="scenario-tday-val" class="slider-val-badge">18.0°C</span>
+            </div>
+            <input type="range" id="scenario-tday" class="scenario-slider" min="-5" max="28" step="0.5" value="18.0">
+            <div class="slider-ticks">
+              <span>-5°C</span>
+              <span>0°C</span>
+              <span>10°C</span>
+              <span>20°C</span>
+              <span>28°C</span>
+            </div>
+          </div>
+
+          <div class="scenario-control-group slider-control-group">
+            <div class="slider-header">
+              <label for="scenario-precip" class="scenario-control-label">Hypothetical Precipitation (precip):</label>
+              <span id="scenario-precip-val" class="slider-val-badge">0.0 mm</span>
+            </div>
+            <input type="range" id="scenario-precip" class="scenario-slider" min="0" max="40" step="0.5" value="0.0">
+            <div class="slider-ticks">
+              <span>0 mm (Dry)</span>
+              <span>5 mm</span>
+              <span>15 mm</span>
+              <span>25 mm</span>
+              <span>40 mm (Heavy)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empirical Out-of-Range Warning (Hidden by default) -->
+        <div id="scenario-range-warning" class="scenario-warning-banner" style="display: none;">
+          <div class="warning-icon">&#9888;</div>
+          <div class="warning-content">
+            <strong>Empirical Range Boundary Notice:</strong>
+            <span id="scenario-range-warning-text">The selected conditions exceed the observed 2024–2025 operating season boundaries (temperature -2.6°C to +24.2°C; precipitation 0.0 mm to 53.0 mm). Linear projections in this region represent extrapolations beyond empirical training support and should be interpreted with caution.</span>
+          </div>
+        </div>
+
+        <!-- Scenario Estimation Output Cards -->
+        <div class="scenario-output-grid">
+          <!-- Primary Estimated Departures -->
+          <div class="scenario-output-card card-primary">
+            <div class="scenario-output-title">Weather-Augmented Estimated Departures</div>
+            <div class="scenario-output-value" id="scenario-est-departures">-- trips</div>
+            <div class="scenario-output-sub" id="scenario-est-band">
+              Empirical 80% 2025 Test Error Band: [-- to -- trips] (MAE: ±-- trips)
+            </div>
+          </div>
+
+          <!-- Calendar-Only Baseline -->
+          <div class="scenario-output-card card-baseline">
+            <div class="scenario-output-title">Calendar-Only Baseline Estimate</div>
+            <div class="scenario-output-value" id="scenario-base-departures">-- trips</div>
+            <div class="scenario-output-sub">
+              Ridership projection excluding weather parameters
+            </div>
+          </div>
+
+          <!-- Marginal Weather Effect Delta -->
+          <div class="scenario-output-card card-delta">
+            <div class="scenario-output-title">Marginal Weather Effect (Delta)</div>
+            <div class="scenario-output-value" id="scenario-weather-delta">-- trips</div>
+            <div class="scenario-output-sub" id="scenario-weather-delta-pct">
+              Net shift attributable to temperature and precipitation
+            </div>
+          </div>
+
+          <!-- 2025 Out-of-Time Accuracy Context -->
+          <div class="scenario-output-card card-context">
+            <div class="scenario-output-title">2025 Out-of-Time Model Accuracy (Selected City)</div>
+            <div class="scenario-output-accuracy" id="scenario-accuracy-context">
+              Weather WAPE: <strong>--%</strong> (MAE -- trips)<br>
+              Calendar Baseline WAPE: <strong>--%</strong> (MAE -- trips)
+            </div>
+            <div class="scenario-output-sub">
+              Evaluated on 214 calendar dates (identical test records)
+            </div>
+          </div>
+        </div>
+
+        <!-- Historical Analog Days Table -->
+        <div class="scenario-analog-section">
+          <div class="scenario-analog-header">
+            <div>
+              <h4 class="scenario-analog-title">Ground-Truth Fact Check: Historical 2025 Analog Days</h4>
+              <p class="scenario-analog-sub">
+                Actual operating days from the 2025 test season that most closely match this calendar and weather scenario. Compares factual recorded departures against model projections.
+              </p>
+            </div>
+            <span class="badge-archetype badge-commute-work">2025 Ground Truth</span>
+          </div>
+
+          <div class="table-wrapper">
+            <table class="data-table" id="scenario-analog-table">
+              <thead>
+                <tr>
+                  <th class="text-center" style="width: 50px;">Match</th>
+                  <th>Date</th>
+                  <th>Day Name</th>
+                  <th>Municipality</th>
+                  <th class="text-right">Observed Temp (°C)</th>
+                  <th class="text-right">Observed Precip (mm)</th>
+                  <th class="text-right">Actual Departures</th>
+                  <th class="text-right">Weather Model Prediction</th>
+                  <th class="text-right">Empirical Residual (y - ŷ)</th>
+                </tr>
+              </thead>
+              <tbody id="scenario-analog-tbody">
+                <!-- Dynamically populated by forecast.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Methodological Callout within Scenario Card -->
+        <div class="scenario-method-callout">
+          <strong>Methodological Guardrails for Scenario Exploration:</strong><br>
+          • <strong>Hypothetical Scenario vs. Weather Forecast:</strong> Sliders allow planners to ask "what if" questions (e.g. assessing sensitivity to a cold rainy day vs. warm sunny day). They do not forecast tomorrow's weather.<br>
+          • <strong>Empirical Residual Distribution vs. Confidence Intervals:</strong> The error band reflects the 10th to 90th percentile of actual prediction residuals observed across the 2025 evaluation season. They are empirical historical error intervals, NOT parametric Gaussian confidence intervals.<br>
+          • <strong>Sample Size and Dependence:</strong> Models are trained on 2024 (214 dates per city) and evaluated out-of-time on 2025 (214 dates per city). Because weather and regional economic factors co-move across Helsinki and Espoo, records between the two cities are not fully independent observations.
+        </div>
+      </div>
+
+      <!-- Methodological Guardrails & Operational Boundaries -->
+      <div class="footer-guardrails" style="margin-top: 1.5rem;">
+        <strong>Methodological Guidelines &amp; Operational Boundaries for Weather Scenario Explorer:</strong><br>
+        • <strong>What-If Scenario vs. Weather Forecast:</strong> Web controls simulate hypothetical "what-if" operating conditions (e.g. evaluating fleet sensitivity to cold rainy days vs. warm sunny weekends). They are strictly NOT weather forecasts and cannot predict upcoming meteorological events.<br>
+        • <strong>City-Day Aggregate Departures:</strong> Models predict daily completed passenger journeys aggregated at municipality level (Helsinki and Espoo). This is fundamentally distinct from station-month rebalancing triage.<br>
+        • <strong>Non-Causal Empirical Co-Movement:</strong> Observed temperature and precipitation sensitivities reflect statistical co-movement across seasons under linear additive assumptions, not causal policy intervention effects.<br>
+        • <strong>Empirical Residual Intervals:</strong> Error ranges reflect the 10th to 90th percentile of actual prediction residuals from the 2025 out-of-time evaluation season. They are historical empirical error bands, NOT parametric Gaussian confidence intervals.<br>
+        • <strong>Sample Size &amp; Spatial Dependence:</strong> Evaluated on 214 calendar dates across two municipalities (428 total city-days). Because regional weather and holidays co-move across Helsinki and Espoo, observations between the two cities are not fully independent.
+      </div>
+
+    </section>
       <div class="footer-guardrails" style="margin-top: 1.5rem;">
         <strong>Methodological Guidelines &amp; Operational Boundaries for Demand Forecasting:</strong><br>
         • <strong>Single Out-of-Time Backtest:</strong> All metrics reflect a single evaluation cycling season (2025). The lower volume error of the Same-Month Baseline and higher ranking overlap of Ridge regression serve as empirical planning observations, not claims of permanent or statistically significant superiority.<br>

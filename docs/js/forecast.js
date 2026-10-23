@@ -18,6 +18,16 @@ const ForecastModule = (function () {
   // Data cache
   let summaryData = null;      // Loaded from ./data/data_model_summary.json
   let predictionData = null;   // Loaded from ./data/data_model_predictions_2025.json
+  let scenarioData = null;     // Loaded from ./data/data_weather_scenario.json
+
+  // Scenario state (City-Day aggregate what-if analysis)
+  const scenarioState = {
+    city: "Helsinki",
+    month: 6,           // June (integer 4 to 10)
+    daytype: "weekday", // "weekday" or "weekend"
+    tday: 18.0,         // Mean daily temperature (°C)
+    precip: 0.0         // Daily precipitation (mm)
+  };
 
   // Chart instances
   let scatterChartInstance = null;
@@ -63,6 +73,7 @@ const ForecastModule = (function () {
    */
   function init() {
     bindEvents();
+    bindScenarioEvents();
     loadForecastData();
   }
 
@@ -135,11 +146,16 @@ const ForecastModule = (function () {
       fetch("./data/data_model_predictions_2025.json").then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status} loading predictions data`);
         return r.json();
+      }),
+      fetch("./data/data_weather_scenario.json").then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status} loading weather scenario data`);
+        return r.json();
       })
     ])
-      .then(([summary, preds]) => {
+      .then(([summary, preds, scenario]) => {
         summaryData = summary;
         predictionData = preds;
+        scenarioData = scenario;
 
         if (loadingElem) loadingElem.style.display = "none";
 
@@ -147,6 +163,7 @@ const ForecastModule = (function () {
         renderMonthlyWapeChart();
         renderRankingOverlapChart();
         updateDynamicViews();
+        initWeatherScenario();
       })
       .catch((err) => {
         if (loadingElem) loadingElem.style.display = "none";
@@ -698,8 +715,249 @@ const ForecastModule = (function () {
     tbody.innerHTML = html;
   }
 
+  /**
+   * Initializes the City-Day Weather Scenario Explorer.
+   */
+  function initWeatherScenario() {
+    if (!scenarioData) return;
+    updateScenarioView();
+  }
+
+  /**
+   * Binds event listeners for the scenario controls.
+   */
+  function bindScenarioEvents() {
+    const citySel = document.getElementById("scenario-city");
+    const monthSel = document.getElementById("scenario-month");
+    const daytypeSel = document.getElementById("scenario-daytype");
+    const tdaySlider = document.getElementById("scenario-tday");
+    const precipSlider = document.getElementById("scenario-precip");
+
+    if (citySel) {
+      citySel.addEventListener("change", (e) => {
+        scenarioState.city = e.target.value;
+        updateScenarioView();
+      });
+    }
+
+    if (monthSel) {
+      monthSel.addEventListener("change", (e) => {
+        scenarioState.month = parseInt(e.target.value, 10);
+        updateScenarioView();
+      });
+    }
+
+    if (daytypeSel) {
+      daytypeSel.addEventListener("change", (e) => {
+        scenarioState.daytype = e.target.value;
+        updateScenarioView();
+      });
+    }
+
+    if (tdaySlider) {
+      const updateTday = (e) => {
+        scenarioState.tday = parseFloat(e.target.value);
+        const badge = document.getElementById("scenario-tday-val");
+        if (badge) badge.textContent = `${scenarioState.tday.toFixed(1)}°C`;
+        updateScenarioView();
+      };
+      tdaySlider.addEventListener("input", updateTday);
+      tdaySlider.addEventListener("change", updateTday);
+    }
+
+    if (precipSlider) {
+      const updatePrecip = (e) => {
+        scenarioState.precip = parseFloat(e.target.value);
+        const badge = document.getElementById("scenario-precip-val");
+        if (badge) badge.textContent = `${scenarioState.precip.toFixed(1)} mm`;
+        updateScenarioView();
+      };
+      precipSlider.addEventListener("input", updatePrecip);
+      precipSlider.addEventListener("change", updatePrecip);
+    }
+  }
+
+  /**
+   * Evaluates the what-if scenario using 2024-trained Ridge regression models.
+   * Compares the weather-augmented model with the calendar-only baseline,
+   * calculates empirical 2025 test residual bands, verifies empirical bounds,
+   * and triggers historical analog day retrieval.
+   */
+  function updateScenarioView() {
+    if (!scenarioData || !scenarioData.models) return;
+
+    const calModel = scenarioData.models.calendar_only;
+    const wthModel = scenarioData.models.weather;
+    const bounds = scenarioData.meta.empirical_bounds;
+
+    const isHelsinki = scenarioState.city === "Helsinki" ? 1.0 : 0.0;
+    const isWeekend = scenarioState.daytype === "weekend" ? 1.0 : 0.0;
+    const month = scenarioState.month;
+    const tday = scenarioState.tday;
+    const precip = scenarioState.precip;
+
+    // Feature indicators (m_5 to m_10; m_4 is reference category)
+    const mIndicators = {};
+    for (let m = 5; m <= 10; m++) {
+      mIndicators[`m_${m}`] = month === m ? 1.0 : 0.0;
+    }
+
+    // 1. Calendar-Only Baseline Score
+    let calScore = calModel.intercept;
+    calScore += (calModel.coefficients.is_helsinki || 0) * isHelsinki;
+    calScore += (calModel.coefficients.is_weekend || 0) * isWeekend;
+    for (let m = 5; m <= 10; m++) {
+      calScore += (calModel.coefficients[`m_${m}`] || 0) * mIndicators[`m_${m}`];
+    }
+    const calPred = Math.max(0, calScore);
+
+    // 2. Weather-Augmented Model Score
+    let wthScore = wthModel.intercept;
+    wthScore += (wthModel.coefficients.is_helsinki || 0) * isHelsinki;
+    wthScore += (wthModel.coefficients.is_weekend || 0) * isWeekend;
+    for (let m = 5; m <= 10; m++) {
+      wthScore += (wthModel.coefficients[`m_${m}`] || 0) * mIndicators[`m_${m}`];
+    }
+    wthScore += (wthModel.coefficients.tday || 0) * tday;
+    wthScore += (wthModel.coefficients.precip || 0) * precip;
+    const wthPred = Math.max(0, wthScore);
+
+    // 3. Marginal Weather Effect Delta
+    const delta = wthPred - calPred;
+    const deltaPct = calPred > 0 ? (delta / calPred) * 100 : 0;
+
+    // 4. Empirical Residual Bounds (from 2025 out-of-time test evaluation)
+    const cityKey = scenarioState.city.toLowerCase();
+    const cityResiduals = (wthModel.empirical_residuals && wthModel.empirical_residuals[cityKey])
+      ? wthModel.empirical_residuals[cityKey]
+      : { p10: -2000, p90: 2000, mae: 1500 };
+
+    const lowerBand = Math.max(0, Math.round(wthPred + cityResiduals.p10));
+    const upperBand = Math.round(wthPred + cityResiduals.p90);
+    const maeVal = Math.round(cityResiduals.mae);
+
+    // 5. Check empirical bounds
+    const warningBox = document.getElementById("scenario-range-warning");
+    const warningText = document.getElementById("scenario-range-warning-text");
+    const isTdayOut = bounds && bounds.tday ? (tday < bounds.tday.min || tday > bounds.tday.max) : false;
+    const isPrecipOut = bounds && bounds.precip ? (precip < bounds.precip.min || precip > bounds.precip.max) : false;
+
+    if (warningBox && warningText) {
+      if (isTdayOut || isPrecipOut) {
+        const warnMsgs = [];
+        if (isTdayOut) {
+          warnMsgs.push(`Selected temperature (${tday.toFixed(1)}°C) falls outside the observed 2024–2025 operating season boundaries (${bounds.tday.min.toFixed(1)}°C to +${bounds.tday.max.toFixed(1)}°C).`);
+        }
+        if (isPrecipOut) {
+          warnMsgs.push(`Selected precipitation (${precip.toFixed(1)} mm) falls outside the observed range (${bounds.precip.min.toFixed(1)} mm to ${bounds.precip.max.toFixed(1)} mm).`);
+        }
+        warnMsgs.push("Linear projections in this extrapolation regime carry heightened uncertainty and should be evaluated with caution.");
+        warningText.textContent = warnMsgs.join(" ");
+        warningBox.style.display = "flex";
+      } else {
+        warningBox.style.display = "none";
+      }
+    }
+
+    // 6. Update KPI card values
+    const estDepElem = document.getElementById("scenario-est-departures");
+    const estBandElem = document.getElementById("scenario-est-band");
+    const baseDepElem = document.getElementById("scenario-base-departures");
+    const weatherDeltaElem = document.getElementById("scenario-weather-delta");
+    const weatherDeltaPctElem = document.getElementById("scenario-weather-delta-pct");
+    const weatherDeltaCard = weatherDeltaElem ? weatherDeltaElem.closest(".scenario-output-card") : null;
+    const accuracyElem = document.getElementById("scenario-accuracy-context");
+
+    if (estDepElem) estDepElem.textContent = `${Math.round(wthPred).toLocaleString()} trips`;
+    if (estBandElem) {
+      estBandElem.textContent = `Empirical 80% 2025 Test Error Band: [${lowerBand.toLocaleString()} to ${upperBand.toLocaleString()} trips] (MAE: ±${maeVal.toLocaleString()} trips)`;
+    }
+    if (baseDepElem) baseDepElem.textContent = `${Math.round(calPred).toLocaleString()} trips`;
+
+    if (weatherDeltaElem) {
+      weatherDeltaElem.textContent = `${delta >= 0 ? '+' : ''}${Math.round(delta).toLocaleString()} trips`;
+    }
+    if (weatherDeltaPctElem) {
+      weatherDeltaPctElem.textContent = `${delta >= 0 ? '+' : ''}${deltaPct.toFixed(1)}% vs. calendar-only baseline`;
+    }
+    if (weatherDeltaCard) {
+      if (delta < 0) {
+        weatherDeltaCard.classList.add("negative-delta");
+      } else {
+        weatherDeltaCard.classList.remove("negative-delta");
+      }
+    }
+
+    if (accuracyElem && wthModel.metrics && calModel.metrics) {
+      const cityWth = wthModel.metrics[cityKey];
+      const cityCal = calModel.metrics[cityKey];
+      if (cityWth && cityCal) {
+        accuracyElem.innerHTML = `Weather WAPE: <strong>${cityWth.wape.toFixed(2)}%</strong> (MAE ${Math.round(cityWth.mae).toLocaleString()} trips)<br>Calendar Baseline WAPE: <strong>${cityCal.wape.toFixed(2)}%</strong> (MAE ${Math.round(cityCal.mae).toLocaleString()} trips)`;
+      }
+    }
+
+    // 7. Render 3-5 historical analog days from 2025 test set
+    renderAnalogDays();
+  }
+
+  /**
+   * Renders 3-5 closest 2025 actual operating test days as factual grounding.
+   */
+  function renderAnalogDays() {
+    const tbody = document.getElementById("scenario-analog-tbody");
+    if (!tbody || !scenarioData || !scenarioData.test_2025_records) return;
+
+    const city = scenarioState.city;
+    const month = scenarioState.month;
+    const isWeekend = scenarioState.daytype === "weekend" ? 1 : 0;
+    const tday = scenarioState.tday;
+    const precip = scenarioState.precip;
+
+    const cityRecords = scenarioData.test_2025_records.filter((r) => r.city === city);
+
+    // Compute standardized distance
+    // Weight month difference (x4.0), day-type difference (x5.0), normalized tday diff / 5.5, normalized precip diff / 4.5
+    const scored = cityRecords.map((r) => {
+      const mDiff = Math.abs(r.month - month);
+      const wkDiff = Math.abs(r.is_weekend - isWeekend);
+      const tDiff = (r.tday - tday) / 5.5;
+      const pDiff = (r.precip - precip) / 4.5;
+      const dist = (mDiff * 4.0) + (wkDiff * 5.0) + (tDiff * tDiff + pDiff * pDiff);
+      return { record: r, dist: dist };
+    });
+
+    scored.sort((a, b) => a.dist - b.dist);
+    const topAnalogs = scored.slice(0, 5).map((item) => item.record);
+
+    let html = "";
+    topAnalogs.forEach((r, idx) => {
+      const residual = r.dep - Math.round(r.wth_pred);
+      const resColor = residual >= 0 ? "#047857" : "#b91c1c";
+      const resSign = residual >= 0 ? "+" : "";
+
+      html += `
+        <tr>
+          <td class="text-center" style="font-weight: 700; color: #64748b;">#${idx + 1}</td>
+          <td><strong>${r.date}</strong></td>
+          <td>${r.day_name}</td>
+          <td><span class="badge-city ${r.city === 'Helsinki' ? 'badge-city-helsinki' : 'badge-city-espoo'}">${r.city}</span></td>
+          <td class="text-right" style="font-weight: 600;">${r.tday.toFixed(1)}°C</td>
+          <td class="text-right">${r.precip.toFixed(1)} mm</td>
+          <td class="text-right" style="font-weight: 700; color: var(--primary-dark);">${r.dep.toLocaleString()}</td>
+          <td class="text-right" style="color: #64748b;">${Math.round(r.wth_pred).toLocaleString()}</td>
+          <td class="text-right" style="font-weight: 600; color: ${resColor};">
+            ${resSign}${residual.toLocaleString()}
+          </td>
+        </tr>
+      `;
+    });
+
+    tbody.innerHTML = html;
+  }
+
   return {
     init: init,
-    updateDynamicViews: updateDynamicViews
+    updateDynamicViews: updateDynamicViews,
+    updateScenarioView: updateScenarioView
   };
 })();

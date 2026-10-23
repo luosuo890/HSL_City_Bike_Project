@@ -22,14 +22,15 @@ def load_json(filename):
 class TestWebDataExports:
 
     def test_all_files_exist(self):
-        """Verifies that all 6 required derived JSON files exist in docs/data/."""
+        """Verifies that all 7 required derived JSON files exist in docs/data/."""
         expected_files = [
             "data_stations.json",
             "data_hourly_city.json",
             "data_commute_peaks.json",
             "data_daily_weather.json",
             "data_model_summary.json",
-            "data_model_predictions_2025.json"
+            "data_model_predictions_2025.json",
+            "data_weather_scenario.json"
         ]
         for fname in expected_files:
             fpath = os.path.join(DOCS_DATA_DIR, fname)

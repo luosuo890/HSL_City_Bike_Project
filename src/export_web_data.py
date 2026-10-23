@@ -715,6 +715,195 @@ def export_model_data(station_month_path, out_dir):
     return summary_payload, predictions_payload
 
 
+def export_weather_scenario_data(docs_data_dir, out_dir):
+    """
+    Exports data_weather_scenario.json:
+    Independent City-Day Weather Scenario Explorer data.
+    - Target: Daily completed departures aggregated by city and calendar date.
+    - Features: city (is_helsinki), is_weekend, month dummies (m_5 to m_10, m_4 reference), tday, precip.
+    - Strictly trained on 2024 (214 days x 2 cities = 428 city-days).
+    - Strictly tested out-of-time on 2025 (214 days x 2 cities = 428 city-days).
+    - Compares Calendar-only baseline vs Weather-augmented Ridge model on identical 2025 records.
+    - Exports empirical residual intervals (80% bounds: p10-p90) and historical 2025 records for analog lookup.
+    """
+    print("Exporting data_weather_scenario.json...")
+    weather_json_path = os.path.join(docs_data_dir, "data_daily_weather.json")
+    with open(weather_json_path, "r", encoding="utf-8") as f:
+        daily_records = json.load(f)["daily_records"]
+
+    df = pd.DataFrame(daily_records)
+    df = df.sort_values(["date", "city"]).reset_index(drop=True)
+
+    train_df = df[df["year"] == 2024].copy().reset_index(drop=True)
+    test_df = df[df["year"] == 2025].copy().reset_index(drop=True)
+
+    month_cols = [f"m_{m}" for m in range(5, 11)]
+
+    def make_features(d, include_weather=False):
+        X = pd.DataFrame()
+        X["is_helsinki"] = (d["city"] == "Helsinki").astype(float)
+        X["is_weekend"] = d["is_weekend"].astype(float)
+        for m in range(5, 11):
+            X[f"m_{m}"] = (d["month"] == m).astype(float)
+        if include_weather:
+            X["tday"] = d["tday"].astype(float)
+            X["precip"] = d["precip"].astype(float)
+        return X
+
+    X_cal_train = make_features(train_df, False)
+    X_cal_test = make_features(test_df, False)
+    X_wth_train = make_features(train_df, True)
+    X_wth_test = make_features(test_df, True)
+
+    y_train = train_df["dep"].values
+    y_test = test_df["dep"].values
+
+    cal_model = Ridge(alpha=1.0, fit_intercept=True)
+    cal_model.fit(X_cal_train, y_train)
+    cal_preds = np.maximum(0, cal_model.predict(X_cal_test))
+
+    wth_model = Ridge(alpha=1.0, fit_intercept=True)
+    wth_model.fit(X_wth_train, y_train)
+    wth_preds = np.maximum(0, wth_model.predict(X_wth_test))
+
+    test_df["cal_pred"] = np.round(cal_preds, 1)
+    test_df["wth_pred"] = np.round(wth_preds, 1)
+    test_df["residual"] = test_df["dep"] - test_df["wth_pred"]
+    test_df["abs_error"] = np.abs(test_df["residual"])
+
+    def calc_metrics(actual, pred):
+        mae = float(np.mean(np.abs(actual - pred)))
+        wape = float(np.sum(np.abs(actual - pred)) / np.sum(actual) * 100)
+        rmse = float(np.sqrt(np.mean((actual - pred) ** 2)))
+        return {
+            "n": int(len(actual)),
+            "mae": round(mae, 2),
+            "wape": round(wape, 2),
+            "rmse": round(rmse, 2)
+        }
+
+    def calc_residuals(sub_df):
+        res = sub_df["residual"].values
+        abs_err = sub_df["abs_error"].values
+        p10, p50, p90 = np.percentile(res, [10, 50, 90])
+        return {
+            "p10": round(float(p10), 1),
+            "p50": round(float(p50), 1),
+            "p90": round(float(p90), 1),
+            "med_abs": round(float(np.median(abs_err)), 1),
+            "mae": round(float(np.mean(abs_err)), 1)
+        }
+
+    # Metrics
+    cal_metrics_all = calc_metrics(y_test, cal_preds)
+    wth_metrics_all = calc_metrics(y_test, wth_preds)
+
+    h_mask = (test_df["city"] == "Helsinki").values
+    e_mask = (test_df["city"] == "Espoo").values
+
+    cal_metrics_helsinki = calc_metrics(y_test[h_mask], cal_preds[h_mask])
+    wth_metrics_helsinki = calc_metrics(y_test[h_mask], wth_preds[h_mask])
+
+    cal_metrics_espoo = calc_metrics(y_test[e_mask], cal_preds[e_mask])
+    wth_metrics_espoo = calc_metrics(y_test[e_mask], wth_preds[e_mask])
+
+    # Residuals
+    residuals_all = calc_residuals(test_df)
+    residuals_helsinki = calc_residuals(test_df[test_df["city"] == "Helsinki"])
+    residuals_espoo = calc_residuals(test_df[test_df["city"] == "Espoo"])
+
+    # Empirical bounds from 2024-2025
+    tday_bounds = {
+        "min": round(float(df["tday"].min()), 1),
+        "max": round(float(df["tday"].max()), 1),
+        "q01": round(float(df["tday"].quantile(0.01)), 1),
+        "q99": round(float(df["tday"].quantile(0.99)), 1)
+    }
+    precip_bounds = {
+        "min": round(float(df["precip"].min()), 1),
+        "max": round(float(df["precip"].max()), 1),
+        "q01": round(float(df["precip"].quantile(0.01)), 1),
+        "q99": round(float(df["precip"].quantile(0.99)), 1)
+    }
+
+    # Test records for client-side analog day matching
+    test_records = []
+    for _, r in test_df.iterrows():
+        test_records.append({
+            "date": str(r["date"]),
+            "city": str(r["city"]),
+            "month": int(r["month"]),
+            "is_weekend": int(r["is_weekend"]),
+            "day_name": str(r["day_name"]),
+            "dep": int(r["dep"]),
+            "tday": round(float(r["tday"]), 1),
+            "precip": round(float(r["precip"]), 1),
+            "cal_pred": round(float(r["cal_pred"]), 1),
+            "wth_pred": round(float(r["wth_pred"]), 1)
+        })
+
+    payload = {
+        "meta": {
+            "description": "City-day weather scenario analysis and out-of-time evaluation",
+            "target": "Daily completed departures by city",
+            "granularity": "City-calendar date aggregate (Helsinki and Espoo)",
+            "train_period": "2024-04-01 to 2024-10-31 (214 days x 2 cities = 428 city-days)",
+            "test_period": "2025-04-01 to 2025-10-31 (214 days x 2 cities = 428 city-days)",
+            "total_train_records": len(train_df),
+            "total_test_records": len(test_df),
+            "calendar_days_per_season": 214,
+            "features_calendar": ["is_helsinki", "is_weekend"] + month_cols,
+            "features_weather": ["is_helsinki", "is_weekend"] + month_cols + ["tday", "precip"],
+            "empirical_bounds": {
+                "tday": tday_bounds,
+                "precip": precip_bounds
+            },
+            "methodological_boundaries": [
+                "City-day aggregate departures only; strictly separate from station-month rebalancing models.",
+                "Retrospective out-of-time test using observed FMI ground weather from 2025; web sliders evaluate hypothetical scenarios, not prospective weather forecasts.",
+                "Error bands reflect empirical 2025 test residual intervals (10th to 90th percentile bounds), not statistical confidence intervals.",
+                "Weather sensitivity represents descriptive empirical co-movement under linear additive assumptions, not causal policy interventions."
+            ]
+        },
+        "models": {
+            "calendar_only": {
+                "name": "Calendar-Only Baseline (Ridge alpha=1.0)",
+                "intercept": round(float(cal_model.intercept_), 4),
+                "coefficients": {k: round(float(v), 4) for k, v in zip(X_cal_train.columns, cal_model.coef_)},
+                "metrics": {
+                    "overall": cal_metrics_all,
+                    "helsinki": cal_metrics_helsinki,
+                    "espoo": cal_metrics_espoo
+                }
+            },
+            "weather": {
+                "name": "Weather-Augmented Model (Ridge alpha=1.0)",
+                "intercept": round(float(wth_model.intercept_), 4),
+                "coefficients": {k: round(float(v), 4) for k, v in zip(X_wth_train.columns, wth_model.coef_)},
+                "metrics": {
+                    "overall": wth_metrics_all,
+                    "helsinki": wth_metrics_helsinki,
+                    "espoo": wth_metrics_espoo
+                },
+                "empirical_residuals": {
+                    "overall": residuals_all,
+                    "helsinki": residuals_helsinki,
+                    "espoo": residuals_espoo
+                }
+            }
+        },
+        "test_2025_records": test_records
+    }
+
+    out_file = os.path.join(out_dir, "data_weather_scenario.json")
+    with open(out_file, "w", encoding="utf-8") as f:
+        json.dump(payload, f, separators=(",", ":"))
+
+    size_kb = os.path.getsize(out_file) / 1024
+    print(f" -> Generated {out_file} ({size_kb:.1f} KB; {len(test_records)} test records)")
+    return payload
+
+
 def run_all_exports(docs_data_dir=None):
     """Orchestrates all Phase 1 data export functions."""
     t_start = time.time()
@@ -750,6 +939,9 @@ def run_all_exports(docs_data_dir=None):
 
     # 5 & 6. Model Comparison Summary & 2025 Predictions
     export_model_data(station_month_path, docs_data_dir)
+
+    # 7. City-Day Weather Scenario Data
+    export_weather_scenario_data(docs_data_dir, docs_data_dir)
 
     # Summary
     print("=" * 70)

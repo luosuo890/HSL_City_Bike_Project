@@ -50,8 +50,8 @@ class TestPhase2WebUI:
             anchor = m.group(0)
             assert 'rel="noopener noreferrer"' in anchor or "rel='noopener noreferrer'" in anchor, f"target='_blank' link missing rel='noopener noreferrer': {anchor}"
 
-        # 4 Tab panes exist and are properly labeled
-        for tab_id in ["tab-station-map", "tab-commute-dynamics", "tab-weather-exploration", "tab-demand-forecasting"]:
+        # 5 Tab panes exist and are properly labeled
+        for tab_id in ["tab-station-map", "tab-commute-dynamics", "tab-weather-exploration", "tab-demand-forecasting", "tab-weather-scenario"]:
             assert f'id="{tab_id}"' in html, f"Missing tab pane: {tab_id}"
 
         # Module status indicators and error handling banners

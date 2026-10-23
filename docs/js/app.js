@@ -38,6 +38,13 @@ document.addEventListener("DOMContentLoaded", function () {
           }
         }, 100);
       }
+
+      // If switching to weather scenario tab, ensure scenario view is updated
+      if (targetTabId === "tab-weather-scenario") {
+        if (typeof ForecastModule !== "undefined" && ForecastModule.updateScenarioView) {
+          ForecastModule.updateScenarioView();
+        }
+      }
     });
   });
 
