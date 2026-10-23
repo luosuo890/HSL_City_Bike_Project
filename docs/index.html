@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HSL City Bike Insights (2024–2025) | Operational Dashboard</title>
+
+  <!-- Leaflet 1.9.4 CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- Chart.js 4.4.7 for Responsive Canvas Visualizations -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+
+  <!-- Local Stylesheet (Strictly Relative Path) -->
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+  <!-- Site Header -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand-title">
+        <span>🚲 HSL City Bike Insights</span>
+        <span class="brand-badge">2024–2025</span>
+      </div>
+      <div class="header-meta">
+        <span>Helsinki &amp; Espoo Transport Planning</span>
+        <span>•</span>
+        <span>457 Stations &amp; 4.95M Clean Trips</span>
+        <span>•</span>
+        <a href="https://github.com/luosuo890/HSL_City_Bike_Project" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Top Navigation Tabs -->
+  <nav class="nav-tabs-wrapper">
+    <div class="nav-tabs">
+      <button class="tab-btn active" data-tab="tab-station-map">
+        <span>🗺️ Station Map &amp; Rebalancing Triage</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-commute-dynamics">
+        <span>⏱️ Commute Dynamics &amp; Peaks</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-weather-exploration">
+        <span>🌤️ Weather &amp; Ridership</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-demand-forecasting">
+        <span>📈 Demand Forecasting Benchmarks</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Main Content Area -->
+  <main class="main-content">
+
+    <!-- Global Error Banner (Hidden by default) -->
+    <div id="error-banner" class="alert-banner" style="display: none; background-color: #fef2f2; border-color: #fca5a5; color: #991b1b;"></div>
+
+    <!-- TAB 1: Station Map & Rebalancing Triage (Active in Phase 2) -->
+    <section id="tab-station-map" class="tab-pane active">
+
+      <!-- Informational Alert Banner -->
+      <div id="alert-banner" class="alert-banner">
+        <div>
+          <strong>Operational Triage View:</strong> Visualizing cumulative station departures, returns, and directional net flow across 454 coordinate stations.
+          Use filters below to inspect seasonal variations or isolate specific commuter hubs.
+        </div>
+        <button id="alert-banner-close" class="alert-close" aria-label="Dismiss notice">&times;</button>
+      </div>
+
+      <!-- Split Layout Workspace -->
+      <div class="workspace-grid">
+
+        <!-- Left Sidebar: Controls & KPIs -->
+        <aside class="control-panel">
+
+          <div class="panel-section-title">
+            <span>Filter Parameters</span>
+            <span style="font-size: 0.7rem; color: #64748b; font-weight: normal;">454 Stations</span>
+          </div>
+
+          <!-- Year Filter -->
+          <div class="filter-group">
+            <label for="filter-year" class="filter-label">Cycling Season / Year</label>
+            <select id="filter-year" class="select-input">
+              <option value="all" selected>All Seasons (2024 &amp; 2025 Combined)</option>
+              <option value="2025">2025 Season Only (4.8% volume increase)</option>
+              <option value="2024">2024 Season Only</option>
+            </select>
+          </div>
+
+          <!-- Month / Quarter Filter -->
+          <div class="filter-group">
+            <label for="filter-month" class="filter-label">Month / Window</label>
+            <select id="filter-month" class="select-input">
+              <option value="all" selected>Full Operating Season (Apr 1 – Oct 31)</option>
+              <option value="Q2">Q2 Spring Expansion (Apr – Jun)</option>
+              <option value="Q3">Q3 Summer Peak (Jul – Sep)</option>
+              <option value="04">April (04) — Season Opening</option>
+              <option value="05">May (05) — Spring Ramp-up</option>
+              <option value="06">June (06) — Early Summer</option>
+              <option value="07">July (07) — Midsummer Peak</option>
+              <option value="08">August (08) — Late Summer Peak</option>
+              <option value="09">September (09) — Autumn Shoulder</option>
+              <option value="10">October (10) — Pre-Closure</option>
+            </select>
+          </div>
+
+          <!-- Municipality Filter -->
+          <div class="filter-group">
+            <label for="filter-city" class="filter-label">Municipality</label>
+            <select id="filter-city" class="select-input">
+              <option value="all" selected>Capital Region (Helsinki &amp; Espoo)</option>
+              <option value="Helsinki">Helsinki (345 Stations, ~88.8% Volume)</option>
+              <option value="Espoo">Espoo (109 Stations, ~11.2% Volume)</option>
+            </select>
+          </div>
+
+          <!-- Metric Selector -->
+          <div class="filter-group">
+            <label class="filter-label">Display Metric (Color &amp; Size)</label>
+            <div class="metric-buttons">
+              <button class="btn-metric active" data-metric="net_flow">Net Flow</button>
+              <button class="btn-metric" data-metric="total_trips">Total Trips</button>
+              <button class="btn-metric" data-metric="departures">Departures</button>
+              <button class="btn-metric" data-metric="returns">Returns</button>
+            </div>
+          </div>
+
+          <!-- Summary KPI Cards -->
+          <div class="panel-section-title" style="margin-top: 0.5rem;">
+            <span>Selected Aggregates</span>
+          </div>
+
+          <div class="kpi-container">
+            <div class="kpi-card">
+              <span class="kpi-title">Active Stations</span>
+              <span id="kpi-active-stations" class="kpi-value">—</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-title">Net Flow</span>
+              <span id="kpi-net-flow" class="kpi-value">—</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-title">Departures</span>
+              <span id="kpi-total-departures" class="kpi-value">—</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-title">Returns</span>
+              <span id="kpi-total-returns" class="kpi-value">—</span>
+            </div>
+          </div>
+
+          <!-- Unmapped Audit Link -->
+          <div style="margin-top: 0.5rem;">
+            <button id="btn-unmapped-audit" class="btn-action" style="width: 100%; justify-content: center;">
+              📋 View 7 Unmapped Stations (Audit Log)
+            </button>
+          </div>
+
+        </aside>
+
+        <!-- Right Main View: Leaflet Map -->
+        <section class="map-view-card">
+          <div class="map-header-bar">
+            <div class="map-title-wrap">
+              <h2 class="map-title">Geospatial Rebalancing &amp; Passenger Drift</h2>
+              <span id="visible-station-count" class="map-badge">Loading...</span>
+            </div>
+            <div class="map-actions">
+              <button id="btn-reset-view" class="btn-action" title="Reset map zoom &amp; center">
+                <span>🔄 Reset View</span>
+              </button>
+              <button id="btn-export-csv" class="btn-action" title="Download station data as CSV">
+                <span>📥 Export CSV</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Map Container -->
+          <div id="map-container">
+            <div id="map-loading-overlay" class="loading-overlay">
+              <div class="spinner"></div>
+              <div class="loading-text">Loading station coordinates and ridership data...</div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Station Ranking & Search Table -->
+      <section class="table-card">
+        <div class="table-header-bar">
+          <div class="table-title-group">
+            <h3>Station Ranking &amp; Triage Roster</h3>
+            <p>Click any station row to center on map; click column headers to sort by volume or net deficit.</p>
+          </div>
+          <div class="table-search-group">
+            <label for="station-search" style="font-size: 0.82rem; font-weight: 600; color: #64748b;">Search:</label>
+            <input type="text" id="station-search" class="table-search-input" placeholder="Station name or ID...">
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="data-table" id="station-ranking-table">
+            <thead>
+              <tr>
+                <th class="text-center" style="width: 60px;">Rank</th>
+                <th data-sort="name">Station Name</th>
+                <th data-sort="city">City</th>
+                <th data-sort="capacity" class="text-right">Capacity</th>
+                <th data-sort="departures" class="text-right">Departures</th>
+                <th data-sort="returns" class="text-right">Returns</th>
+                <th data-sort="net_flow" class="text-right">Net Flow (Returns - Departures)</th>
+              </tr>
+            </thead>
+            <tbody id="station-table-body">
+              <!-- Dynamically populated by map.js -->
+            </tbody>
+          </table>
+          <div id="table-empty-state" class="table-empty-state" style="display: none;">
+            No stations match your filter or search query.
+          </div>
+        </div>
+      </section>
+
+    </section>
+
+    <!-- TAB 2: Commute Dynamics & Peak Hours (Phase 3 Implemented) -->
+    <section id="tab-commute-dynamics" class="tab-pane">
+
+      <!-- Informational Alert Banner -->
+      <div class="alert-banner">
+        <div>
+          <strong>Commute &amp; Diurnal Dynamics:</strong> Analyzing hourly departure and return profiles normalized by actual operating days for
+          <strong>Weekday (Mon–Fri)</strong> and <strong>Weekend (Sat–Sun)</strong> in Europe/Helsinki local time.
+          Examines the +78% to +96% evening rush surge and commuter tidal reversals between residential feeders and workplace centers.
+        </div>
+      </div>
+
+      <!-- Commute Error Banner (Hidden by default) -->
+      <div id="commute-error-banner" class="alert-banner" style="display: none; background-color: #fef2f2; border-color: #fca5a5; color: #991b1b;"></div>
+
+      <!-- Key Commute Metrics Cards -->
+      <div class="commute-kpi-grid">
+        <div class="commute-kpi-card highlight-orange">
+          <span class="commute-kpi-title">Morning Peak Window</span>
+          <span class="commute-kpi-value">07:00 – 09:00</span>
+          <span class="commute-kpi-sub">Utilitarian inbound commute to employment centers &amp; universities</span>
+        </div>
+        <div class="commute-kpi-card highlight-blue">
+          <span class="commute-kpi-title">Evening Peak Window</span>
+          <span class="commute-kpi-value">16:00 – 18:00</span>
+          <span class="commute-kpi-sub">Outbound homeward trips blended with retail, dining &amp; recreation</span>
+        </div>
+        <div class="commute-kpi-card highlight-purple">
+          <span class="commute-kpi-title">Evening Rush Surge</span>
+          <span class="commute-kpi-value">+78.4% / +95.9%</span>
+          <span class="commute-kpi-sub">+78.4% surge in Helsinki (1,208 → 2,154 trips/day); +95.9% in Espoo</span>
+        </div>
+        <div class="commute-kpi-card">
+          <span class="commute-kpi-title">Intraday Clean &amp; Midnight Trips</span>
+          <span class="commute-kpi-value">4.95M Trips</span>
+          <span class="commute-kpi-sub">Clean retention 97.04%; 41,489 midnight-crossing trips cleanly attributed</span>
+        </div>
+      </div>
+
+      <!-- Filter Bar for Diurnal Hourly Profile -->
+      <div class="commute-filter-bar">
+        <div class="commute-filter-item">
+          <label for="commute-filter-city">Municipality:</label>
+          <select id="commute-filter-city" class="select-input" style="width: auto; min-width: 170px;">
+            <option value="All" selected>Capital Region (All)</option>
+            <option value="Helsinki">Helsinki (345 Stations)</option>
+            <option value="Espoo">Espoo (109 Stations)</option>
+          </select>
+        </div>
+
+        <div class="commute-filter-item">
+          <label for="commute-filter-timeframe">Season / Month:</label>
+          <select id="commute-filter-timeframe" class="select-input" style="width: auto; min-width: 230px;">
+            <option value="overall_all" selected>All Seasons (2024 &amp; 2025 Combined)</option>
+            <option value="overall_2025">2025 Full Season Only</option>
+            <option value="overall_2024">2024 Full Season Only</option>
+          </select>
+        </div>
+
+        <div class="commute-filter-item">
+          <label for="commute-filter-mode">Comparison Metric:</label>
+          <select id="commute-filter-mode" class="select-input" style="width: auto; min-width: 270px;">
+            <option value="weekday_vs_weekend" selected>Weekday (Mon–Fri) vs. Weekend (Sat–Sun) Departures</option>
+            <option value="weekday_dep_ret">Weekday (Mon–Fri) Departures vs. Returns</option>
+            <option value="weekend_dep_ret">Weekend (Sat–Sun) Departures vs. Returns</option>
+            <option value="net_flow">Net Flow Curve (Returns - Departures)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Diurnal Hourly Profile Line Chart Card -->
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <div>
+            <h2 class="chart-card-title">24-Hour Diurnal Trip Profiles (00:00–23:00)</h2>
+            <p class="chart-card-sub">
+              Average completed journeys per operating day in Europe/Helsinki local time.
+              Strictly normalized by the count of active operating days for each respective day-type to prevent calendar day-count distortion.
+            </p>
+          </div>
+          <span class="map-badge" style="background-color: #f1f5f9; color: #475569;">Normalized Daily Average</span>
+        </div>
+
+        <div class="chart-canvas-wrap hourly-height">
+          <div id="commute-loading-overlay" class="loading-overlay" style="display: none;">
+            <div class="spinner"></div>
+            <div class="loading-text">Loading hourly commute datasets...</div>
+          </div>
+          <canvas id="chart-hourly-profile"></canvas>
+        </div>
+      </div>
+
+      <!-- Commute Peaks Split Section (Tidal Swing Bar Chart & Quadrant Scatter Chart) -->
+      <div class="commute-charts-grid">
+
+        <!-- Panel A: Top 10 Tidal Swing Bar Chart -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div>
+              <h2 class="chart-card-title">Commuter Tidal Reversal: Top 10 High-Swing Hubs</h2>
+              <p class="chart-card-sub">
+                Morning Peak (07:00–09:00) vs. Evening Peak (16:00–18:00) Net Flow.
+                Opposite signs confirm daily flow reversal between residential sources and employment sinks.
+              </p>
+            </div>
+            <span class="map-badge" style="background-color: #fef3c7; color: #b45309;">Ranked by Swing</span>
+          </div>
+
+          <div class="chart-canvas-wrap split-height">
+            <canvas id="chart-tidal-swing"></canvas>
+          </div>
+        </div>
+
+        <!-- Panel B: Commuter Hub Quadrant Scatter Chart -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div>
+              <h2 class="chart-card-title">Commuter Quadrant Dynamics (Top 120 Busiest Stations)</h2>
+              <p class="chart-card-sub">
+                Morning net flow on horizontal axis versus evening net flow on vertical axis on weekdays (Monday to Friday).
+                Point size scales with cumulative peak rush volume.
+              </p>
+            </div>
+            <span class="map-badge" style="background-color: #e0f2fe; color: #0284c7;">4 Commute Archetypes</span>
+          </div>
+
+          <div class="chart-canvas-wrap split-height">
+            <canvas id="chart-commute-quadrant"></canvas>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Top Commuter Stations Reference Table -->
+      <div class="table-card">
+        <div class="table-header-bar">
+          <div class="table-title-group">
+            <h3>Top Commuter Hubs &amp; Tidal Archetypes</h3>
+            <p>Classified based on directional commuter flow between morning (07:00–09:00) and evening (16:00–18:00) rush hours.</p>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="text-center" style="width: 60px;">Rank</th>
+                <th>Station Name</th>
+                <th>City</th>
+                <th class="text-center">Commute Archetype</th>
+                <th class="text-right">Morn Net (07–09)</th>
+                <th class="text-right">Eve Net (16–18)</th>
+                <th class="text-right">Tidal Swing</th>
+                <th class="text-right">Total Peak Trips</th>
+              </tr>
+            </thead>
+            <tbody id="commuter-table-body">
+              <!-- Dynamically populated by commute.js -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Commute Methodological Guardrails -->
+      <div class="footer-guardrails" style="margin-top: 1.5rem;">
+        <strong>Methodological Guidelines &amp; Operational Boundaries for Commuter Analysis:</strong><br>
+        • <strong>Europe/Helsinki Local Time:</strong> All timestamps and hourly bins strictly reflect local Finnish time, correctly capturing morning (07:00–09:00) and evening (16:00–18:00) commuter schedules.<br>
+        • <strong>Day-Type Definitions:</strong> "Weekday (Mon–Fri)" and "Weekend (Sat–Sun)" are categorized by calendar day-of-week. Public holidays falling on weekdays are preserved in the Monday–Friday pool without arbitrary exclusion.<br>
+        • <strong>Normalized Daily Averages:</strong> All diurnal volume figures are divided by the exact number of operating days for that day-type within the target timeframe, preventing misinterpretation from unequal weekday vs. weekend calendar days.<br>
+        • <strong>Descriptive Patterns vs. Dispatch Instructions:</strong> Intraday net flows reflect passenger choice and directional drift across completed journeys. They identify candidate priority corridors for pre-staging, but do NOT prove causal decision drivers or constitute automated truck dispatch orders without live 15-minute dock sensors.
+      </div>
+
+    </section>
+
+    <!-- TAB 3: Daily Weather & Ridership (Phase 4 Implemented) -->
+    <section id="tab-weather-exploration" class="tab-pane">
+
+      <!-- Informational Alert Banner -->
+      <div class="alert-banner">
+        <div>
+          <strong>FMI Meteorological Observations &amp; Daily Ridership:</strong> Exploring empirical correlations between retrospective ground weather observations
+          from <strong>FMI Kaisaniemi (FMISID 100971, Helsinki)</strong> and <strong>FMI Tapiola (FMISID 874863, Espoo)</strong> and daily cycling volumes
+          across 856 matched city-days (2024–2025).
+        </div>
+      </div>
+
+      <!-- Weather Error Banner (Hidden by default) -->
+      <div id="weather-error-banner" class="alert-banner" style="display: none; background-color: #fef2f2; border-color: #fca5a5; color: #991b1b;"></div>
+
+      <!-- Weather KPI Grid -->
+      <div class="weather-kpi-grid">
+        <div class="weather-kpi-card highlight-orange">
+          <span class="weather-kpi-title">Matched City-Days (n)</span>
+          <span id="kpi-weather-samples" class="weather-kpi-value">—</span>
+          <span class="weather-kpi-sub">Retrospective FMI ground observations (Apr–Oct)</span>
+        </div>
+        <div class="weather-kpi-card highlight-blue">
+          <span class="weather-kpi-title">Descriptive Correlation (r)</span>
+          <span id="kpi-weather-corr" class="weather-kpi-value">—</span>
+          <span id="kpi-weather-corr-sub" class="weather-kpi-sub">Pearson co-movement (non-causal)</span>
+        </div>
+        <div class="weather-kpi-card highlight-purple">
+          <span class="weather-kpi-title">Descriptive OLS Slope</span>
+          <span id="kpi-weather-slope" class="weather-kpi-value">—</span>
+          <span id="kpi-weather-slope-sub" class="weather-kpi-sub">Trips per unit variation</span>
+        </div>
+        <div class="weather-kpi-card highlight-teal">
+          <span class="weather-kpi-title">Precipitation Frequency</span>
+          <span id="kpi-weather-rainydays" class="weather-kpi-value">—</span>
+          <span id="kpi-weather-rainydays-sub" class="weather-kpi-sub">Days with precipitation &gt; 0 mm</span>
+        </div>
+        <div class="weather-kpi-card highlight-slate">
+          <span class="weather-kpi-title">Unmapped Docks Preserved</span>
+          <span id="kpi-weather-unmapped" class="weather-kpi-value">23,981 dep</span>
+          <span class="weather-kpi-sub">Zero volume lost from 7 unmapped stations</span>
+        </div>
+      </div>
+
+      <!-- Weather Interactive Filter Bar -->
+      <div class="weather-filter-bar">
+        <div class="weather-filter-item">
+          <label for="filter-weather-year">Season / Year:</label>
+          <select id="filter-weather-year" class="select-input">
+            <option value="all" selected>All Seasons (2024 &amp; 2025 Combined)</option>
+            <option value="2024">2024 Season (Apr–Oct)</option>
+            <option value="2025">2025 Season (Apr–Oct)</option>
+          </select>
+        </div>
+
+        <div class="weather-filter-item">
+          <label for="filter-weather-city">Municipality:</label>
+          <select id="filter-weather-city" class="select-input">
+            <option value="all" selected>Both Municipalities (Helsinki &amp; Espoo)</option>
+            <option value="Helsinki">Helsinki (FMISID 100971 Kaisaniemi)</option>
+            <option value="Espoo">Espoo (FMISID 874863 Tapiola)</option>
+          </select>
+        </div>
+
+        <div class="weather-filter-item">
+          <label for="filter-weather-param">Weather Metric:</label>
+          <select id="filter-weather-param" class="select-input">
+            <option value="tday" selected>Daily Mean Temperature (°C)</option>
+            <option value="tmax">Daily Maximum Temperature (°C)</option>
+            <option value="tmin">Daily Minimum Temperature (°C)</option>
+            <option value="precip">Daily Precipitation (mm)</option>
+            <option value="snow">Snow Depth (cm)</option>
+          </select>
+        </div>
+
+        <div class="weather-filter-item">
+          <label for="filter-weather-daytype">Day Type:</label>
+          <select id="filter-weather-daytype" class="select-input">
+            <option value="all" selected>All Days</option>
+            <option value="weekday">Weekdays (Mon–Fri)</option>
+            <option value="weekend">Weekends (Sat–Sun)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Charts Row 1: Scatter Plot & Rainfall Breakdown -->
+      <div class="weather-charts-grid">
+
+        <!-- Scatter Plot Card -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div>
+              <div class="chart-card-title">Daily Ridership vs. Selected Weather Metric</div>
+              <div class="chart-card-sub">
+                Scatter distribution of daily departures against weather parameter with Ordinary Least Squares (OLS) trendline.
+              </div>
+            </div>
+            <span class="badge-archetype badge-commute-surp">Descriptive Co-Movement</span>
+          </div>
+          <div class="chart-canvas-wrap weather-scatter-height">
+            <div id="weather-loading-overlay" class="loading-overlay" style="display: none;">
+              <div class="spinner"></div>
+              <div class="loading-text">Loading FMI historical weather records...</div>
+            </div>
+            <canvas id="chart-weather-scatter"></canvas>
+          </div>
+        </div>
+
+        <!-- Precipitation Intensity Breakdown Card -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div>
+              <div class="chart-card-title">Precipitation Impact by Rainfall Intensity</div>
+              <div class="chart-card-sub">
+                Average daily departures grouped into Dry (0 mm), Trace (0.1–2 mm), Moderate (2.1–10 mm), and Heavy (&gt;10 mm).
+              </div>
+            </div>
+            <span class="badge-archetype badge-commute-work">Precipitation Sensitivity</span>
+          </div>
+          <div class="chart-canvas-wrap weather-scatter-height">
+            <canvas id="chart-weather-rain-bars"></canvas>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Charts Row 2: Chronological Dual-Axis Time Series -->
+      <div class="chart-card" style="margin-top: 1.5rem;">
+        <div class="chart-card-header">
+          <div>
+            <div class="chart-card-title">Chronological Time Series (Trips vs. Weather Envelope)</div>
+            <div class="chart-card-sub">
+              Dual-axis temporal tracking: Left axis displays daily departures (trips); Right axis displays the selected meteorological parameter on a dedicated physical scale.
+            </div>
+          </div>
+          <span class="badge-archetype badge-commute-work">Dual-Axis Synchronization</span>
+        </div>
+        <div class="chart-canvas-wrap weather-timeseries-height">
+          <canvas id="chart-weather-timeseries"></canvas>
+        </div>
+      </div>
+
+      <!-- Methodological Guardrails & Operational Boundaries -->
+      <div class="footer-guardrails" style="margin-top: 1.5rem;">
+        <strong>Methodological Guidelines &amp; Operational Boundaries for Weather Analysis:</strong><br>
+        • <strong>Retrospective Ground Observations:</strong> Weather metrics represent historical measurements from FMI official stations (Kaisaniemi and Tapiola). They are strictly NOT weather forecasts and cannot be used for prospective day-ahead dispatch planning.<br>
+        • <strong>Descriptive Correlation vs. Causality:</strong> Observed positive temperature correlation (+0.74 to +0.78 within cities) reflects seasonal co-movement heavily confounded by solar daylight duration (5.5 hrs in winter to 19 hrs in midsummer) and school/academic vacation schedules. These statistical associations must NOT be interpreted as causal ridership drivers.<br>
+        • <strong>Strict Model Feature Exclusion:</strong> To maintain strict operational integrity, weather variables were intentionally excluded from our 2025 machine learning predictive models, preventing reliance on synthetic or forecasted meteorological data.<br>
+        • <strong>Unmapped Docks Integrity:</strong> 23,981 journeys departing from 7 unmapped docks (e.g., temporary workshop stations) are fully retained in city-wide daily aggregates, ensuring zero trip loss while preserving map coordinate rigor.
+      </div>
+
+    </section>
+
+    <!-- TAB 4: Demand Forecasting Benchmarks (Phase 5 Implemented) -->
+    <section id="tab-demand-forecasting" class="tab-pane">
+
+      <!-- Informational Alert Banner -->
+      <div class="alert-banner">
+        <div>
+          <strong>Out-of-Time Forecasting &amp; Rebalancing Benchmarks:</strong> Comparing <strong>Same-Month Baseline (2024)</strong>,
+          <strong>Ridge Regression (Lag-1)</strong>, and <strong>Decision Tree (Lag-1)</strong> across 2,718 matched station-month test observations
+          in May–October 2025. Evaluates the dual operational trade-off between gross volume error and high-priority net outflow ranking triage.
+        </div>
+      </div>
+
+      <!-- Forecast Error Banner (Hidden by default) -->
+      <div id="forecast-error-banner" class="alert-banner" style="display: none; background-color: #fef2f2; border-color: #fca5a5; color: #991b1b;"></div>
+
+      <!-- KPI Summary Cards -->
+      <div class="forecast-kpi-grid">
+        <div class="forecast-kpi-card highlight-green">
+          <span class="forecast-kpi-title">Same-Month Baseline</span>
+          <span class="forecast-kpi-value">17.58% WAPE</span>
+          <span class="forecast-kpi-sub">MAE 141.9 trips/mo (Lowest gross volume error)</span>
+        </div>
+        <div class="forecast-kpi-card highlight-orange">
+          <span class="forecast-kpi-title">Ridge Ranking Peak</span>
+          <span class="forecast-kpi-value">Up to 80% Match</span>
+          <span class="forecast-kpi-sub">Top-20 Net Outflow (June: 16/20, Spearman ρ=0.76)</span>
+        </div>
+        <div class="forecast-kpi-card highlight-purple">
+          <span class="forecast-kpi-title">Decision Tree</span>
+          <span class="forecast-kpi-value">24.72% WAPE</span>
+          <span class="forecast-kpi-sub">MAE 199.5 trips/mo (Non-linear piecewise baseline)</span>
+        </div>
+        <div class="forecast-kpi-card highlight-rose">
+          <span class="forecast-kpi-title">Low-Usage Sensitivity</span>
+          <span class="forecast-kpi-value">33.8% vs. 124.1%</span>
+          <span class="forecast-kpi-sub">Base vs. Ridge on Q1 low-demand docks (≤198 trips)</span>
+        </div>
+        <div class="forecast-kpi-card highlight-teal">
+          <span class="forecast-kpi-title">Test Sample Alignment</span>
+          <span class="forecast-kpi-value">N = 2,718</span>
+          <span class="forecast-kpi-sub">Strict multi-model alignment (May–Oct 2025)</span>
+        </div>
+      </div>
+
+      <!-- Interactive Filter Bar -->
+      <div class="forecast-filter-bar">
+        <div class="forecast-filter-item">
+          <label for="filter-forecast-month">Evaluation Month:</label>
+          <select id="filter-forecast-month" class="select-input">
+            <option value="all" selected>All Months (May–Oct 2025, N=2,718)</option>
+            <option value="2025-05">2025-05 (May)</option>
+            <option value="2025-06">2025-06 (June - Peak Demand Surge)</option>
+            <option value="2025-07">2025-07 (July)</option>
+            <option value="2025-08">2025-08 (August)</option>
+            <option value="2025-09">2025-09 (September)</option>
+            <option value="2025-10">2025-10 (October - Autumn Wind-down)</option>
+          </select>
+        </div>
+
+        <div class="forecast-filter-item">
+          <label for="filter-forecast-model">Model Algorithm:</label>
+          <select id="filter-forecast-model" class="select-input">
+            <option value="base" selected>Same-Month Baseline (2024)</option>
+            <option value="ridge">Ridge Regression (Lag-1, α=10.0)</option>
+            <option value="dt">Decision Tree (Lag-1, max_depth=6)</option>
+          </select>
+        </div>
+
+        <div class="forecast-filter-item">
+          <label for="filter-forecast-metric">Flow Metric:</label>
+          <select id="filter-forecast-metric" class="select-input">
+            <option value="dep" selected>Departures (Rentals / Outflow)</option>
+            <option value="ret">Returns (Dockings / Inflow)</option>
+            <option value="net">Net Flow (Returns - Departures)</option>
+          </select>
+        </div>
+
+        <div class="forecast-filter-item">
+          <label for="filter-forecast-city">Municipality:</label>
+          <select id="filter-forecast-city" class="select-input">
+            <option value="all" selected>Both Municipalities (Helsinki &amp; Espoo)</option>
+            <option value="Helsinki">Helsinki Stations</option>
+            <option value="Espoo">Espoo Stations</option>
+          </select>
+        </div>
+
+        <div class="forecast-filter-item">
+          <label for="filter-forecast-segment">Volume Segment:</label>
+          <select id="filter-forecast-segment" class="select-input">
+            <option value="all" selected>All Stations (Full Volume Range)</option>
+            <option value="q1_low">Low-Usage Only (Q1 Bottom 25%, ≤198 trips/mo)</option>
+          </select>
+        </div>
+
+        <div class="forecast-filter-item" style="flex: 1; min-width: 180px;">
+          <label for="filter-forecast-search">Station Filter:</label>
+          <input type="text" id="filter-forecast-search" class="table-search-input" placeholder="Search station name or ID...">
+        </div>
+      </div>
+
+      <!-- Main Visual 1: Actual vs Predicted Scatter Plot Card -->
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <div>
+            <div class="chart-card-title">2025 Actual vs. Model Predicted Demand</div>
+            <div class="chart-card-sub">
+              Scatter plot comparing observed 2025 monthly journey volumes against model predictions with ideal reference diagonal (y = x).
+            </div>
+          </div>
+          <!-- Dynamic Slice Metrics Callout -->
+          <div class="slice-metrics-pill">
+            <span id="slice-model-label" style="font-weight: 700; color: var(--primary-dark);">Same-Month Baseline — Departures</span>
+            <span class="slice-stat-sep">|</span>
+            <span id="slice-sample-count">N = 2,718</span>
+            <span class="slice-stat-sep">|</span>
+            <span>MAE: <strong id="slice-mae-val">141.9 trips</strong></span>
+            <span class="slice-stat-sep">|</span>
+            <span>WAPE: <strong id="slice-wape-val">17.58%</strong></span>
+            <span class="slice-stat-sep">|</span>
+            <span>RMSE: <strong id="slice-rmse-val">262.4 trips</strong></span>
+          </div>
+        </div>
+        <div class="chart-canvas-wrap forecast-scatter-height">
+          <div id="forecast-loading-overlay" class="loading-overlay" style="display: none;">
+            <div class="spinner"></div>
+            <div class="loading-text">Loading 2,718 out-of-time test predictions...</div>
+          </div>
+          <canvas id="chart-forecast-scatter"></canvas>
+        </div>
+      </div>
+
+      <!-- Visuals Row 2: Monthly WAPE Breakdown & Top-20 Net Outflow Ranking Overlap -->
+      <div class="forecast-charts-grid" style="margin-top: 1.5rem;">
+
+        <!-- Monthly WAPE Comparison -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div>
+              <div class="chart-card-title">Monthly Volume Error Profile (WAPE %)</div>
+              <div class="chart-card-sub">
+                Departures Weighted Absolute Percentage Error across months (May–Oct 2025).
+              </div>
+            </div>
+            <span class="badge-archetype badge-commute-surp">Volume Accuracy</span>
+          </div>
+          <div class="chart-canvas-wrap forecast-subchart-height">
+            <canvas id="chart-forecast-monthly-wape"></canvas>
+          </div>
+        </div>
+
+        <!-- Top-20 Net Outflow Ranking Overlap -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div>
+              <div class="chart-card-title">Top-20 Net Outflow Triage Overlap</div>
+              <div class="chart-card-sub">
+                Number of actual top 20 net outflow stations correctly prioritized by each model.
+              </div>
+            </div>
+            <span class="badge-archetype badge-commute-work">Triage Prioritization</span>
+          </div>
+          <div class="chart-canvas-wrap forecast-subchart-height">
+            <canvas id="chart-forecast-ranking-overlap"></canvas>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Comparative Benchmarking Scorecard Table -->
+      <div class="table-card" style="margin-top: 1.5rem;">
+        <div class="table-header-bar">
+          <div class="table-title-group">
+            <h3>Out-of-Time Model Benchmarking Scorecard</h3>
+            <p>
+              Strict comparison of prediction errors across identical cohorts. Note that Full-Season Baseline (N=3,170) is separated to avoid unfair cohort pooling.
+            </p>
+          </div>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table" id="forecast-scorecard-table">
+            <thead>
+              <tr>
+                <th>Model Architecture</th>
+                <th class="text-center">Evaluation Cohort</th>
+                <th class="text-right">Dep MAE (trips)</th>
+                <th class="text-right">Dep WAPE (%)</th>
+                <th class="text-right">Dep RMSE</th>
+                <th class="text-right">Ret MAE (trips)</th>
+                <th class="text-right">Ret WAPE (%)</th>
+                <th class="text-right">Ret RMSE</th>
+              </tr>
+            </thead>
+            <tbody id="forecast-scorecard-tbody">
+              <!-- Dynamically populated by forecast.js -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Monthly Station Net Flow Triage Roster Table -->
+      <div class="table-card" style="margin-top: 1.5rem;">
+        <div class="table-header-bar">
+          <div class="table-title-group">
+            <h3>Station Net Flow Triage Roster (Current Filter Selection)</h3>
+            <p>
+              Top stations ranked by actual monthly net outflow (greatest net passenger departure balance). Compares actual net journeys with Baseline and Ridge predictions.
+            </p>
+          </div>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table" id="forecast-triage-table">
+            <thead>
+              <tr>
+                <th class="text-center" style="width: 50px;">Rank</th>
+                <th>Station Name</th>
+                <th>City</th>
+                <th class="text-center">Flow Type</th>
+                <th class="text-right">Actual Net Flow</th>
+                <th class="text-right">Baseline Net Flow</th>
+                <th class="text-right">Ridge Predicted Net Flow</th>
+              </tr>
+            </thead>
+            <tbody id="forecast-triage-tbody">
+              <!-- Dynamically populated by forecast.js -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Methodological Guardrails & Operational Boundaries -->
+      <div class="footer-guardrails" style="margin-top: 1.5rem;">
+        <strong>Methodological Guidelines &amp; Operational Boundaries for Demand Forecasting:</strong><br>
+        • <strong>Single Out-of-Time Backtest:</strong> All metrics reflect a single evaluation cycling season (2025). The lower volume error of the Same-Month Baseline and higher ranking overlap of Ridge regression serve as empirical planning observations, not claims of permanent or statistically significant superiority.<br>
+        • <strong>Demand Forecast Errors:</strong> MAE measures trips, not bicycles. Error metrics (MAE and RMSE) are strictly denominated in completed passenger journeys (trips) per station-month, not physical bicycle inventory. Bicycles turn over multiple times per day across stations.<br>
+        • <strong>Flow Terminology &amp; Rebalancing Limits:</strong> Terms such as "Net Outflow" (returns less than departures) and "Net Inflow" (returns greater than departures) quantify directional journey imbalances over 30 days. They do not represent physical dock fullness or empty states, and must not be treated as automated rebalancing truck dispatch orders.<br>
+        • <strong>No Weather Feature Leakage:</strong> Predictive models were trained strictly using historical lag volumes, geospatial coordinates, dock capacities, and month indicators. Actual 2025 weather was completely omitted from model feature matrices.<br>
+        • <strong>Strict Cohort Differentiation:</strong> Full-Season Baseline (N = 3,170 station-months, April to October) includes April season opening data; Multi-Model Test (N = 2,718 station-months, May to October) omits April because 1-month lag models require previous-month operating history. These cohorts must never be merged.
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Unmapped Stations Audit Modal -->
+  <div id="unmapped-modal" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>Unmapped Stations Audit (Missing Coordinates)</h3>
+        <button id="modal-close-btn" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-alert">
+          <strong>Methodological Audit Rule:</strong>
+          These 7 stations appear in HSL journey records but lack WGS84 coordinates in the official ArcGIS layer (e.g., temporary workshop docks or event stations).
+          To maintain strict cartographic integrity, they are <em>never</em> plotted with synthetic coordinates on the map. Their trips are fully audited below.
+        </div>
+        <table class="data-table" style="font-size: 0.82rem;">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Station Name</th>
+              <th>City</th>
+              <th class="text-right">Total Dep</th>
+              <th class="text-right">Total Ret</th>
+              <th class="text-right">Net Flow</th>
+              <th>Audit Reason</th>
+            </tr>
+          </thead>
+          <tbody id="unmapped-table-body">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer & Methodological Guardrails -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-guardrails">
+        <strong>Essential Methodological Boundaries for Transport Planners &amp; Operators:</strong><br>
+        • <strong>Net Flow Definition:</strong> Net flow equals returns minus departures, reflecting 30-day cumulative directional passenger drift across stations. It does not represent instantaneous dock capacity, real-time bicycle inventory, or truck redistribution requirements.<br>
+        • <strong>Historical Weather Observations:</strong> Sourced retrospectively from Finnish Meteorological Institute (FMI) ground stations (Kaisaniemi and Tapiola). Strictly historical observations, not weather forecasts; observed correlations reflect seasonal co-movement and are non-causal.<br>
+        • <strong>Demand Forecast Errors:</strong> MAE measures trips, not bicycles. Error is quantified in completed passenger journeys per station-month, not physical missing bicycles, because bicycles circulate across multiple journeys daily.<br>
+        • <strong>Out-of-Time Backtest:</strong> Evaluated across a single out-of-time test season (2025). Serves as an exploratory operational planning benchmark without claims of statistical significance.
+      </div>
+      <div>
+        University of Helsinki · Introduction to Data Science Mini-Project · Built for GitHub Pages Deployment (Zero Server Backend)
+      </div>
+    </div>
+  </footer>
+
+  <!-- Local JavaScript Modules (Strictly Relative Paths) -->
+  <script src="./js/map.js"></script>
+  <script src="./js/commute.js"></script>
+  <script src="./js/weather.js"></script>
+  <script src="./js/forecast.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>
